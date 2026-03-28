@@ -1,0 +1,13 @@
+# Bỏ qua các file môi trường Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# Bỏ qua dữ liệu Big Data (Quan trọng)
+*.csv
+*.json
+*.parquet
+/data/
+/checkpoint/
