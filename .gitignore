@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 venv/
 env/
+.venv/
+.env
+!.env.example
 
 # Bỏ qua dữ liệu Big Data (Quan trọng)
 *.csv

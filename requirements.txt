@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+aiokafka
+python-dotenv
+kafka-python
+websocket-client
+pyspark
