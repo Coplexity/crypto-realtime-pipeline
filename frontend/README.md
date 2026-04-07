@@ -1,33 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend - Phase 5: Visualization Dashboard
 
-## Getting Started
+Next.js 14 dashboard untuk visualize dữ liệu tiền điện tử real-time.
+Kết nối tới FastAPI backend qua WebSocket để stream trade data live.
 
-First, run the development server:
+## Kiến Trúc
+
+```
+frontend/
+├── app/
+│   ├── layout.tsx        # Root layout + providers
+│   ├── page.tsx          # Home page
+│   └── globals.css       # Global styles
+├── components/           # React components (Phase 5)
+├── lib/                  # Utilities (Phase 5)
+└── public/               # Static assets
+```
+
+## Tính Năng
+
+### Phase 5 Planned:
+- Real-time trade data stream via WebSocket
+- Interactive OHLCV candlestick charts
+- Market statistics dashboard
+- Price alerts and notifications
+- Historical data visualization
+
+## Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Development server
+npm run dev
+
+# Production build
+npm run build
+npm run start
+```
+
+## Environment
+
+Create `.env.local`:
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000
+```
+
+## Technology Stack
+
+- **Framework:** Next.js 14 (App Router)
+- **Styling:** Tailwind CSS + PostCSS
+- **Charts:** D3.js / Recharts (Phase 5)
+- **State:** React Hooks / Context API (Phase 5)
+- **WebSocket:** Native WebSocket API
+- **HTTP Client:** Fetch API
+
+## Development
+
+Development server runs on http://localhost:3000
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Production
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build
+npm run start
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Notes
 
-## Learn More
+Phase 5 is reserved for dashboard implementation.
+Backend API (FastAPI) should be running on http://localhost:8000
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
 ## Deploy on Vercel
 

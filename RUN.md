@@ -1,91 +1,239 @@
-# Huong Dan Chay Du An
+# Hướng Dẫn Chạy Dự Án
 
-Tai lieu nay mo ta thu tu chay toan bo he thong: Kafka -> Backend -> Producer -> Frontend.
+**Scope:** Phase 2 - Data Collection (Thu Thập Dữ Liệu)
 
-## 1) Chuan bi
+---
 
-- Cai Docker Desktop
-- Cai Python 3.9+
-- Cai Node.js 18+
+## Prerequisites
 
-## 2) Clone va cai dat Python
+- Docker Desktop (20.10+)
+- Python 3.9+
+- Git
 
-Mo terminal tai thu muc LLXLDL, sau do chay:
+Verify:
+```bash
+docker --version
+python --version
+```
 
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
+---
 
-## 3) Tao file moi truong
+## Quick Start
 
-Neu chua co file .env thi tao tu mau:
+### 1. Prepare Environment
 
-    cp .env.example .env
+```bash
+cd d:\crypto-realtime-pipeline
 
-Noi dung mac dinh:
+# Create virtual environment
+python -m venv .venv
 
-    KAFKA_BOOTSTRAP_SERVERS=localhost:29092
-    KAFKA_TOPIC_NAME=binance_trades
-    FASTAPI_PORT=8000
+# Activate (Windows)
+.venv\Scripts\activate
+# Activate (Linux/Mac)
+source .venv/bin/activate
 
-## 4) Chay Docker services (Kafka/Zookeeper)
+# Install dependencies
+pip install -r requirements.txt
+```
 
-Tai thu muc LLXLDL:
+### 2. Configuration
 
-    docker compose up -d zookeeper kafka
+```bash
+# Copy environment template
+cp .env.example .env
 
-Kiem tra container:
+# Verify content:
+cat .env
+```
 
-    docker compose ps
+### 3. Start Infrastructure
 
-## 5) Chay Backend FastAPI
+```bash
+# Start Kafka & Zookeeper
+docker compose up -d zookeeper kafka
 
-Mo terminal 1:
+# Verify containers
+docker compose ps
 
-    cd /Users/macbook/Workspace/LLXLDL
-    source .venv/bin/activate
-    python -m uvicorn main:app --reload
+# Create Kafka topic
+./setup_kafka_topics.sh
+```
 
-Backend se chay tai:
-- http://127.0.0.1:8000
-- Swagger: http://127.0.0.1:8000/docs
+### 4. Start Servers
 
-## 6) Chay Producer Binance -> Kafka
+**Terminal 1: Producer** (Binance WebSocket → Kafka)
+```bash
+.venv\Scripts\activate
+python binance_to_kafka.py
+```
 
-Mo terminal 2:
+Expected output:
+```
+PHASE 2: Thu thập dữ liệu
+Kết nối Binance WebSocket thành công
+Kafka Producer khởi tạo
+Đang gửi vào Kafka...
+```
 
-    cd /Users/macbook/Workspace/LLXLDL
-    source .venv/bin/activate
-    python binance_to_kafka.py
+**Terminal 2: Verification Consumer**
+```bash
+.venv\Scripts\activate
+python kafka_consumer_verification.py
+```
 
-Neu on dinh, ban se thay log da gui trade vao Kafka.
+Expected output:
+```
+Consumer khởi tạo thành công
+Đang lắng nghe Kafka Topic
+[Messages displayed]
+Statistics [every 10 seconds]
+```
 
-## 7) Chay Frontend Next.js
+**Terminal 3: Backend** (Optional)
+```bash
+.venv\Scripts\activate
+python -m uvicorn main:app --reload
+```
 
-Mo terminal 3:
+Access: `http://localhost:8000/docs`
 
-    cd /Users/macbook/Workspace/LLXLDL/frontend
-    npm install
-    npm run dev
+---
 
-Mo trinh duyet:
-- http://localhost:3001 (hoac port Next.js dang hien thi trong terminal)
+## Verification
 
-## 8) Thu tu kiem tra nhanh khi bi loi
+### Check Kafka Topic
+```bash
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+# Should show: binance_trades
 
-1. Kiem tra backend dang chay tren 8000.
-2. Kiem tra producer dang chay va co log trade.
-3. Kiem tra file .env trong LLXLDL co day du bien.
-4. Kiem tra dang dung dung Python env:
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --describe --topic binance_trades
+# Should show: Partitions: 3, Replication: 1, Compression: snappy
+```
 
-    which python
-    python -c "import sys; print(sys.executable)"
+### Check Messages
+```bash
+docker exec kafka kafka-console-consumer --bootstrap-server localhost:9092 \
+  --topic binance_trades --from-beginning --max-messages 5
+```
 
-Duong dan dung phai la: /Users/macbook/Workspace/LLXLDL/.venv/bin/python
+Should show JSON trade messages.
 
-## 9) Dung he thong
+### Check Logs
+```bash
+# Producer logs
+tail -f binance_producer.log
 
-- Dung cac process dang chay bang Ctrl + C trong tung terminal.
-- Neu muon tat Kafka/Zookeeper:
+# Verification consumer logs
+tail -f kafka_consumer_verification.log
+```
 
-    docker compose down
+---
+
+## Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| Connection refused | `docker compose up -d zookeeper kafka` |
+| Module not found | `pip install -r requirements.txt` |
+| Topic not found | Run `./setup_kafka_topics.sh` |
+| No messages | Check producer logs, check Kafka container status |
+| Docker memory | Increase Docker Desktop memory to 4GB+ |
+
+---
+
+## Cleanup
+
+### Stop Services
+```bash
+docker compose down
+```
+
+### Delete Topic
+```bash
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic binance_trades
+```
+
+### Full Reset
+```bash
+docker compose down -v
+```
+
+---
+
+## Documentation
+
+- **Specification:** PHASE_2_SPECIFICATION.md
+- **Code:** binance_to_kafka.py, kafka_consumer_verification.py
+- **Script:** setup_kafka_topics.sh
+
+---
+
+## Troubleshooting
+
+### Kafka Container Issues
+```bash
+docker logs kafka       # View Kafka logs
+docker logs zookeeper   # View Zookeeper logs
+docker ps              # List running containers
+```
+
+### Producer Not Sending
+```bash
+# Check if producer is running
+ps aux | grep binance_to_kafka
+# Or check log file
+cat binance_producer.log
+```
+
+### Consumer Not Receiving
+```bash
+# Check consumer group
+docker exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list
+
+# Check consumer lag
+docker exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 \
+  --group verification-consumer-group --describe
+```
+
+---
+
+## System Commands Reference
+
+```bash
+# Docker
+docker compose up -d                              # Start containers
+docker compose down                               # Stop containers
+docker compose ps                                 # List containers
+docker logs kafka                                 # View container logs
+
+# Kafka
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+docker exec kafka kafka-console-producer --broker-list localhost:9092 --topic binance_trades
+docker exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic binance_trades --from-beginning
+
+# Python
+python -m venv .venv                             # Create virtual environment
+source .venv/bin/activate                        # Activate (Linux/Mac)
+.venv\Scripts\activate                           # Activate (Windows)
+pip install -r requirements.txt                  # Install dependencies
+```
+
+---
+
+## Typical Workflow
+
+1. Open 3 terminals in project directory
+2. Terminal 1: Start producer → Wait for "Kết nối Binance WebSocket thành công"
+3. Terminal 2: Start verification consumer → Wait for messages
+4. Observe messages and statistics
+5. When done: Ctrl+C to stop each terminal
+6. `docker compose down` to stop infrastructure
+
+---
+
+## Next Phase
+
+After Phase 2 verification is complete, proceed to Phase 3: Spark Processing
+
+See: PHASE_2_SPECIFICATION.md for details

@@ -1,7 +1,100 @@
-fastapi
-uvicorn[standard]
-aiokafka
-python-dotenv
-kafka-python
-websocket-client
-pyspark
+# ============================================
+# CRYPTO REAL-TIME PIPELINE DEPENDENCIES
+# ============================================
+#
+# MESSAGE QUEUE & STREAMING
+# ============================================
+
+# Kafka Python Client
+# - Synchronous producer/consumer library
+# - Used in IT-12 (WebSocket producer) and IT-14 (verification consumer)
+# - Note: v2.0.0+ required for acks=all support
+kafka-python>=2.0.0
+
+# WebSocket Client
+# - Real-time connection to Binance WebSocket stream (IT-12)
+# - Enables wss:// secure WebSocket connections
+# - Used for BTC/USDT trade data ingestion
+websocket-client>=1.0.0
+
+# Async Kafka Client
+# - Async/await support for Kafka operations
+# - Planned for Phase 3 streaming enhancements
+# - Higher throughput than kafka-python (async)
+aiokafka>=0.8.0
+
+# ============================================
+# WEB FRAMEWORK & API
+# ============================================
+
+# FastAPI
+# - High-performance async web framework
+# - RESTful API for Phase 4-5 (data access endpoints)
+# - Auto-generated OpenAPI documentation
+# - Performance: 2x faster than Flask
+fastapi>=0.95.0
+
+# Uvicorn
+# - ASGI application server (FastAPI runtime)
+# - High concurrency support (async workers)
+# - Used for production web server
+# - Extras: [standard] includes uvloop and httptools (performance)
+uvicorn[standard]>=0.21.0
+
+# ============================================
+# UTILITIES & CONFIGURATION
+# ============================================
+
+# Python-dotenv
+# - Load environment variables from .env file
+# - Configuration management (KAFKA_BROKER, LOG_LEVEL, etc)
+# - Development vs Production configurations
+python-dotenv>=1.0.0
+
+# Requests
+# - HTTP client library
+# - REST API calls for external services
+# - Phase 3+ integration points
+requests>=2.28.0
+
+# ============================================
+# DATA PROCESSING & ANALYTICS
+# ============================================
+
+# PySpark
+# - Distributed data processing framework
+# - Phase 3: Stream processing (OHLCV aggregation)
+# - Phase 4: Batch processing and analytics
+# - Version 3.3.0+: Better Python 3.10+ support
+pyspark>=3.3.0
+
+# ============================================
+# MONITORING & PERFORMANCE (OPTIONAL)
+# ============================================
+
+# Uncomment for local prometheus metrics:
+# prometheus-client>=0.17.0      # Metrics export
+# psutils>=5.10.0                # System monitoring
+
+# Uncomment for advanced serialization:
+# msgpack>=1.0.0                 # Binary serialization (40% faster than JSON)
+
+# ============================================
+# NOTES
+# ============================================
+#
+# Python Version: 3.9, 3.10, or 3.11
+# Install: pip install -r requirements.txt
+# Update: pip install -r requirements.txt --upgrade
+# Check: pip check (verify dependencies)
+#
+# Phase 2 Use:
+#   - Producer: kafka-python, websocket-client, python-dotenv
+#   - Consumer: kafka-python, python-dotenv
+#   - Both: requests (for error reporting, future extensions)
+#
+# Future Phases:
+#   - Phase 3: aiokafka, pyspark
+#   - Phase 4: pyspark, requests, mongodb, redis
+#   - Phase 5: fastapi, uvicorn, requests
+#
