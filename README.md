@@ -53,11 +53,14 @@ Hệ thống này xây dựng một quy trình xử lý dữ liệu real-time ho
 ## Những Tính Năng Chính
 
 ### 🔄 Thu Thập Dữ Liệu (Phase 2 - Hiện tại)
-- ✅ Kết nối trực tiếp WebSocket với Binance
-- ✅ Truyền tải dữ liệu real-time (30+ ghi dịch/giây)
+- ✅ Kết nối WebSocket Multistream với Binance (200+ pairs)
+- ✅ Dynamic pair discovery từ Binance REST API
+- ✅ Lọc theo volume hoặc whitelist
+- ✅ Truyền tải dữ liệu real-time (1000+ ghi dịch/giây)
 - ✅ Xử lý tự động khi mất kết nối (auto-reconnect)
 - ✅ Gửi đến Kafka với bảo đảm độ tin cậy cao (acks=all)
 - ✅ Xác minh chất lượng dữ liệu real-time
+- ✅ Thống kê theo cặp (message count, last price)
 
 ### ⚙️ Xử Lý Dữ Liệu (Phase 3 - Sắp tới)
 - Streaming aggregation với Spark Structured Streaming

@@ -1,153 +1,240 @@
 # KIẾN TRÚC HỆ THỐNG
 
-## Tổng Quan Kiến Trúc
+## Tổng Quan Kiến Trúc (Phase 2 - Multi-Pair)
 
-Hệ thống sử dụng kiến trúc **event-driven, microservices** với thành phần core là **Apache Kafka** - message broker đắc lực cho xử lý stream data real-time.
+Hệ thống sử dụng kiến trúc **event-driven, microservices** với thành phần core là **Apache Kafka** - message broker đắc lực cho xử lý stream data real-time. Hiện tại hỗ trợ **200+ cryptocurrency trading pairs** via Binance Multistream WebSocket.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      BINANCE EXCHANGE API                        │
-│                   (WebSocket: btcusdt@trade)                     │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
+┌───────────────────────────────────────────────────────────────────┐
+│                      BINANCE EXCHANGE API                         │
+│   REST API: Pair discovery + volume filtering                     │
+│   WebSocket Multistream: Real-time trade events (200+ pairs)      │
+│   Example: btcusdt@trade, ethusdt@trade, bnbusdt@trade, ...      │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
                     Real-time Trade Events
-                    (30+ trades/second)
-                             │
-        ┌────────────────────▼────────────────────┐
-        │    BINANCE_TO_KAFKA.PY (Producer)       │
-        │  IT-12: WebSocket Connection Handler    │
-        │  IT-13: Kafka Producer                  │
-        │                                         │
-        │  - Parser: JSONify trade data           │
-        │  - Serializer: Serialize to bytes       │
-        │  - Sender: Send with acks=all           │
-        │  - Retry: Auto-retry on failure         │
-        │  - Logger: Log to file + console        │
-        └────────────────────┬────────────────────┘
-                             │
+                    (1000+ trades/second)
+                               │
+        ┌──────────────────────▼──────────────────────┐
+        │   BINANCE_TO_KAFKA.PY (Producer)            │
+        │   IT-12 & IT-13: Multi-Pair Edition         │
+        │                                              │
+        │  ┌─ Pair Discovery ────────────────────┐   │
+        │  │ • REST API fetch: GET /exchangeInfo │   │
+        │  │ • Filter: volume threshold          │   │
+        │  │ • Refresh: hourly or on-demand      │   │
+        │  └─────────────────────────────────────┘   │
+        │                                              │
+        │  ┌─ WebSocket Multistream ──────────────┐   │
+        │  │ • wss://.../stream?streams=...       │   │
+        │  │ • Up to 200 pairs per connection     │   │
+        │  │ • Auto-reconnect with backoff       │   │
+        │  └─────────────────────────────────────┘   │
+        │                                              │
+        │  ┌─ Data Processing ────────────────────┐   │
+        │  │ • Parser: Extract per-symbol trades │   │
+        │  │ • Serializer: JSON → bytes          │   │
+        │  │ • Sender: Kafka with acks=all       │   │
+        │  │ • Statistics: Track per-pair        │   │
+        │  └─────────────────────────────────────┘   │
+        └──────────────────────┬──────────────────────┘
+                               │
                         JSON Messages
+                      (200+ symbols)
                       Snappy Compressed
-                             │
-        ┌────────────────────▼────────────────────┐
-        │     KAFKA BROKER (Port 9092)             │
-        │   ┌──────────────────────────────────┐  │
-        │   │  Topic: binance_trades           │  │
-        │   │  Partitions: 3                   │  │
-        │   │  Replication Factor: 1           │  │
-        │   │  Retention: 30 days              │  │
-        │   │  Compression: snappy             │  │
-        │   │                                  │  │
-        │   │  ┌─────┬─────┬─────┐            │  │
-        │   │  │ P-0 │ P-1 │ P-2 │ (Partitions)│  │
-        │   │  └─────┴─────┴─────┘            │  │
-        │   └──────────────────────────────────┘  │
-        └────────────────────┬────────────────────┘
-                             │
-            ┌────────────────┼────────────────┐
-            │                │                │
-       Consumer 1        Consumer 2      Consumer 3
-       (Redis Cache)   (Spark Stream)  (Verification)
-            │                │                │
-        ┌───▼──┐         ┌───▼──┐        ┌───▼──────────────┐
-        │Redis │         │Spark │        │VERIFICATION.PY   │
-        │      │         │      │        │IT-14: Validator  │
-        │-fast │         │-agg  │        │                  │
-        │-real │         │-ml   │        │-verify format    │
-        └──────┘         └──────┘        │-check types      │
-                                         │-calc stats       │
-                                         └──────────────────┘
-            │                │                │
-            │ Phase 3+       │ Phase 3+       │ Phase 2
+                               │
+        ┌──────────────────────▼──────────────────────┐
+        │     KAFKA BROKER (Port 9092 - 3 partitions) │
+        │   ┌────────────────────────────────────┐    │
+        │   │  Topic: binance_trades             │    │
+        │   │  Partitions: 3                     │    │
+        │   │  Retention: 30 days                │    │
+        │   │  Compression: snappy               │    │
+        │   │                                    │    │
+        │   │  ┌─────┬─────┬─────┐              │    │
+        │   │  │ P-0 │ P-1 │ P-2 │ (Partitions)│    │
+        │   │  └─────┴─────┴─────┘              │    │
+        │   │  (Key-based: symbol → partition)  │    │
+        │   └────────────────────────────────────┘    │
+        └──────────────────────┬──────────────────────┘
+                               │
+            ┌──────────────────┼──────────────────┐
+            │                  │                  │
+       Consumer 1          Consumer 2        Consumer 3
+       (Redis Cache)    (Spark Stream)   (Verification)
+            │                  │                  │
+        ┌───▼──┐           ┌───▼──┐        ┌────▼────────┐
+        │Redis │           │Spark │        │VERIFICATION.│
+        │      │           │      │        │PY (IT-14)   │
+        │-hot  │           │-OHLCV│        │             │
+        │-fast │           │-any  │        │-symbol check│
+        │-multi│           │-symbol        │-schema val. │
+        │ pair │           │-aggr │        │-per-pair st.│
+        └──────┘           └──────┘        └─────────────┘
+            │                  │                  │
+            │ Phase 3+         │ Phase 3+        │ Phase 2
+```
+
+## Data Flow: Multi-Pair Architecture
+
+**Step 1: Pair Discovery (Startup + Periodic Refresh)**
+```
+Config: BINANCE_PAIR_FILTER = "hot|all|whitelist"
+        BINANCE_PAIR_MIN_VOLUME = 100000
+        BINANCE_PAIR_WHITELIST = "btcusdt,ethusdt,..."
+
+         ↓
+
+Call REST API: GET /api/v3/exchangeInfo
+Result: List of all USDT trading pairs
+
+         ↓
+
+Filter & Sort by volumeActive pairs: {btcusdt, ethusdt, bnbusdt, ...}
+```
+
+**Step 2: WebSocket Multistream Connection**
+```
+Pairs: {btcusdt, ethusdt, bnbusdt, adausdt, ... (up to 200)}
+
+         ↓
+
+Build URL: wss://stream.binance.com:9443/stream?streams=
+           btcusdt@trade/ethusdt@trade/bnbusdt@trade/...
+
+         ↓
+
+Connect to WebSocket
+```
+
+**Step 3: Trade Event Processing**
+```
+Incoming Multistream Message:
+{
+    "stream": "btcusdt@trade",
+    "data": {
+        "e": "trade",
+        "s": "BTCUSDT",
+        "t": 12345,
+        "p": "45000.00",
+        "q": "0.1",
+        ...
+    }
+}
+
+         ↓
+
+Extract symbol from "stream" field
+Parse data payload
+Add ingestion timestamp
+Update per-pair statistics
+
+         ↓
+
+Serialize to JSON bytes
+
+         ↓
+
+Send to Kafka topic: binance_trades
+(Key: symbol for partition assignment)
 ```
 
 ## Thành Phần Chi Tiết
 
-### 1. BINANCE WebSocket Client (IT-12)
+### 1. BINANCE REST API Client (Pair Discovery)
 
-**Mục đích:** Kết nối trực tiếp với Binance stream API
+**Endpoint:** `GET https://api.binance.com/api/v3/exchangeInfo`
+
+**Mục Đích:** Lấy danh sách tất cả trading pairs
+
+**Response Sample:**
+```json
+{
+    "symbols": [
+        {
+            "symbol": "BTCUSDT",
+            "status": "TRADING",
+            ...
+        },
+        {
+            "symbol": "ETHUSDT",
+            "status": "TRADING",
+            ...
+        },
+        ...
+    ]
+}
+```
+
+**Filtering Logic (3 modes):**
+
+1. **Mode: "hot"** (Volume-based)
+   ```
+   Fetch: GET /api/v3/ticker/24hr
+   Filter: quoteAssetVolume >= MIN_VOLUME
+   Result: Top liquid pairs only
+   ```
+
+2. **Mode: "all"**
+   ```
+   Use all USDT pairs from exchangeInfo
+   No volume filtering
+   Result: ALL active USDT pairs
+   ```
+
+3. **Mode: "whitelist"**
+   ```
+   Use explicit list from BINANCE_PAIR_WHITELIST
+   Example: btcusdt,ethusdt,bnbusdt,adausdt
+   Result: Only specified pairs
+   ```
+
+**Refresh Logic:**
+- Call every `BINANCE_PAIR_UPDATE_INTERVAL` seconds (default: 3600)
+- Background thread (daemon mode)
+- Update active_pairs in-memory
+- Log changes
+
+### 2. BINANCE WebSocket Multistream (IT-12)
+
+**Endpoint:** `wss://stream.binance.com:9443/stream?streams=symbol1@trade/symbol2@trade/...`
 
 **Thông Số Kỹ Thuật:**
-- Stream URL: `wss://stream.binance.com:9443/ws/btcusdt@trade`
-- Cặp: BTC/USDT
-- Độ phân giải: Per-trade (mỗi ghi dịch)
-- Throughput: 30+ ghi dịch/giây
-- Timeout: 10 giây
+- Max streams per connection: **200**
+- If >200 pairs needed: Spawn multiple producer instances
 - Ping interval: 30 giây
+- Timeout: 10 giây
+- Throughput: 1000+ trades/second
 
-**Dữ Liệu Input (từ Binance):**
+**Message Format (Multistream):**
 ```json
 {
-    "e": "trade",
-    "E": 1701234567890,
-    "s": "BTCUSDT",
-    "t": 123456789,
-    "p": "45123.45",
-    "q": "0.5",
-    "b": 789,
-    "a": 790,
-    "T": 1701234567000,
-    "m": false,
-    "M": true
+    "stream": "btcusdt@trade",
+    "data": {
+        "e": "trade",
+        "E": 1701234567890,
+        "s": "BTCUSDT",
+        "t": 123456789,
+        "p": "45123.45",
+        "q": "0.5",
+        "b": 789,
+        "a": 790,
+        "T": 1701234567000,
+        "m": false,
+        "M": true
+    }
 }
 ```
-
-**Xử Lý:**
-- Parse JSON từ WebSocket message
-- Validate các trường bắt buộc
-- Chuyển đổi kiểu dữ liệu (string → float)
-- Thêm timestamp hệ thống
-- Gửi tới Kafka Producer
 
 **Error Handling:**
-- Network timeout → Auto-reconnect với exponential backoff
-- Parse error → Log và skip message
-- Connection lost → Try reconnect (tối đa 10 lần)
+- Network timeout → Auto-reconnect (exponential backoff)
+- Parse error → Log & skip
+- Connection lost → Retry up to 10 times
+- After 10 retries → Exit with error
 
-### 2. Kafka Producer (IT-13)
+### 3. Kafka Producer (IT-13)
 
-**Mục Đích:** Gửi dữ liệu đến Kafka topic với bảo đảm độ tin cậy cao
-
-**Cấu Hình Reliability:**
-- `acks=all` - Chờ xác nhận từ tất cả replicas
-- `retries=3` - Tự động retry 3 lần nếu gửi thất bại
-- `max_in_flight_requests_per_connection=1` - Bảo đảm thứ tự messages
-
-**Serialization:**
-- Python dict → JSON string → UTF-8 bytes
-
-**Compression:**
-- Type: Snappy
-- Compression ratio: ~2.5:1
-
-**Dữ Liệu Output (vào Kafka):**
-```json
-{
-    "symbol": "BTCUSDT",
-    "trade_id": 123456789,
-    "price": 45123.45,
-    "quantity": 0.5,
-    "buyer_order_id": 789,
-    "seller_order_id": 790,
-    "trade_time": 1701234567000,
-    "is_buyer_maker": false,
-    "is_best_match": true,
-    "ingestion_timestamp": 1701234567890
-}
-```
-
-**Async Sending:**
-- Non-blocking send()
-- Success callback: Log lệnh
-- Error callback: Log error, track counter
-
-### 3. Kafka Topic (IT-13)
-
-**Cấu Hình Topic:**
-```yaml
-name: binance_trades
-partitions: 3                       # 3 consumer có thể song song
-replication_factor: 1               # Development, có thể tăng lên 3 cho production
-retention_ms: 2592000000            # 30 ngày
+**Topic Configuration:**
 compression_type: snappy            # Giảm 60-70% dung lượng
 min_insync_replicas: 1              # Tối thiểu 1 replica xác nhận trước khi ack
 ```

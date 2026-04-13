@@ -48,6 +48,34 @@ BINANCE_RECONNECT_MAX_DELAY=30
 BINANCE_WEBSOCKET_TIMEOUT=10
 
 # ============================================
+# BINANCE MULTI-PAIR CONFIGURATION (Phase 2.1)
+# ============================================
+
+# Pair discovery mode:
+#   hot       = Top volume pairs (USDT trading volume > min_volume)
+#   all       = All USDT trading pairs from Binance
+#   whitelist = Explicit pair whitelist (BINANCE_PAIR_WHITELIST)
+BINANCE_PAIR_FILTER=hot
+
+# Minimum 24h trading volume threshold (in USDT)
+# Only pairs with volume >= this value will be included
+# Only used when BINANCE_PAIR_FILTER=hot
+# Recommended: 100000 (100k) for production, 10000 for testing
+BINANCE_PAIR_MIN_VOLUME=100000
+
+# Explicit pair whitelist when filter mode is 'whitelist'
+# Format: comma-separated, lowercase, USDT pairs only
+# Example: btcusdt,ethusdt,bnbusdt,adausdt,xrpusdt,dogeusdt
+# Leave empty if not using whitelist mode
+BINANCE_PAIR_WHITELIST=
+
+# Pair list refresh interval (seconds)
+# How often to refresh the pair list from Binance
+# Set to 0 to disable auto-refresh (use initial list only)
+# Recommended: 3600 (1 hour) for production
+BINANCE_PAIR_UPDATE_INTERVAL=3600
+
+# ============================================
 # LOGGING CONFIGURATION
 # ============================================
 
