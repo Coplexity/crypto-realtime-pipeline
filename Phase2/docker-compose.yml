@@ -1,0 +1,132 @@
+version: "3.8"
+
+# Định nghĩa mạng nội bộ để các container gọi được nhau bằng tên
+networks:
+  bigdata-network:
+    driver: bridge
+
+# Định nghĩa nơi lưu dữ liệu lâu dài (volumes)
+volumes:
+  hdfs_namenode:
+  hdfs_datanode:
+  mongo_data:
+  grafana_data:
+
+services:
+  # ==============================
+  # 1. Hàng đợi tin nhắn (Kafka)
+  # ==============================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - bigdata-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - bigdata-network
+
+  # ==============================
+  # 2. Lưu trữ lâu dài (HDFS)
+  # ==============================
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870" # HDFS Web UI
+    environment:
+      - CLUSTER_NAME=bigdata-cluster
+    volumes:
+      - hdfs_namenode:/hadoop/dfs/name
+    networks:
+      - bigdata-network
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    ports:
+      - "9864:9864"
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    volumes:
+      - hdfs_datanode:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    networks:
+      - bigdata-network
+
+  # ==============================
+  # 3. Trái tim xử lý (Spark)
+  # ==============================
+  spark-master:
+    image: bde2020/spark-master:3.2.1-hadoop3.2
+    container_name: spark-master
+    ports:
+      - "8080:8080" # Spark Master Web UI
+      - "7077:7077" # Spark Submit Port
+    networks:
+      - bigdata-network
+
+  spark-worker:
+    image: bde2020/spark-worker:3.2.1-hadoop3.2
+    container_name: spark-worker
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+    ports:
+      - "8081:8081" # Spark Worker Web UI
+    depends_on:
+      - spark-master
+    networks:
+      - bigdata-network
+
+  # ==============================
+  # 4. NoSQL DB & Dashboard
+  # ==============================
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - bigdata-network
+
+  redis:
+    image: redis:6.2-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - bigdata-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000" # Grafana Dashboard UI
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - mongodb
+    networks:
+      - bigdata-network
