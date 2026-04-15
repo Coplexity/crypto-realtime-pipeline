@@ -1,0 +1,67 @@
+# ============================================
+# CRYPTO REAL-TIME PIPELINE DEPENDENCIES
+# ============================================
+
+# ============================================
+# 1. MESSAGE QUEUE & STREAMING (Phase 1 & 2)
+# ============================================
+# Synchronous producer/consumer library
+kafka-python-ng>=2.2.0
+
+# Thư viện nén dữ liệu siêu tốc cho Kafka (Cần cài libsnappy-dev trên Ubuntu trước)
+python-snappy>=0.6.1
+
+# Real-time connection to Binance WebSocket stream
+websocket-client>=1.0.0
+
+# Async Kafka Client (Cho các tính năng nâng cao sau này)
+aiokafka>=0.8.0
+
+# ============================================
+# 2. DATABASE & STORAGE (Lưu trữ lõi & Cache)
+# ============================================
+# Kết nối và đọc ghi dữ liệu nến OHLCV với MongoDB
+pymongo>=4.3.3
+
+# In-memory Cache siêu tốc và quản lý trạng thái cho DAG Airflow
+redis>=4.5.0
+
+# ============================================
+# 3. DATA PROCESSING & MACHINE LEARNING (Phase 3 & AI)
+# ============================================
+# Distributed data processing framework (Gom nến, Stream processing)
+pyspark==3.5.0
+
+# Bộ 3 thư viện cốt lõi cho Train và Predict AI
+pandas>=2.0.0
+scikit-learn>=1.2.0
+numpy>=1.24.0
+
+# ============================================
+# 4. ORCHESTRATION (Phase 4)
+# ============================================
+# Nhạc trưởng điều phối toàn bộ các Job, lập lịch tự động
+apache-airflow>=2.7.0
+
+# ============================================
+# 5. WEB FRAMEWORK & API (Phase 5)
+# ============================================
+# RESTful API tốc độ cao xuất dữ liệu ra Frontend
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+
+# ============================================
+# 6. UTILITIES & CONFIGURATION
+# ============================================
+# Quản lý biến môi trường (.env)
+python-dotenv>=1.0.0
+
+# Gọi API bên ngoài (Lấy danh sách coin, bắn cảnh báo Telegram...)
+requests>=2.28.0
+
+# ============================================
+# 7. MONITORING & PERFORMANCE (OPTIONAL)
+# ============================================
+# Bỏ comment nếu sau này cần vẽ biểu đồ giám sát RAM/CPU trên Grafana
+# prometheus-client>=0.17.0
+# psutils>=5.10.0
