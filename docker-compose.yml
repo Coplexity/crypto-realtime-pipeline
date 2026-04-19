@@ -1,5 +1,3 @@
-version: "3.8"
-
 name: crypto-stack
 
 x-kafka-python-image: &kafka-python-image
@@ -84,62 +82,62 @@ services:
       - bigdata-network
     restart: unless-stopped
 
-  backend:
-    build:
-      context: ./backend_fastapi
-      dockerfile: Dockerfile
-    container_name: backend
-    depends_on:
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      - MONGO_URI=mongodb://mongodb:27017
-      - MONGO_DB=CRYPTO
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=123456
-      - KAFKA_BOOTSTRAP=kafka:9092
-      - CORS_ORIGINS=["http://localhost:3000"]
-    ports:
-      - "8000:8000"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-    networks:
-      - bigdata-network
-    restart: unless-stopped
+  # backend:
+  #   build:
+  #     context: ./backend_fastapi
+  #     dockerfile: Dockerfile
+  #   container_name: backend
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #     mongodb:
+  #       condition: service_healthy
+  #     kafka:
+  #       condition: service_healthy
+  #   environment:
+  #     - MONGO_URI=mongodb://mongodb:27017
+  #     - MONGO_DB=CRYPTO
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #     - REDIS_PASSWORD=123456
+  #     - KAFKA_BOOTSTRAP=kafka:9092
+  #     - CORS_ORIGINS=["http://localhost:3000"]
+  #   ports:
+  #     - "8000:8000"
+  #   healthcheck:
+  #     test:
+  #       [
+  #         "CMD",
+  #         "python",
+  #         "-c",
+  #         "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+  #       ]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 40s
+  #   networks:
+  #     - bigdata-network
+  #   restart: unless-stopped
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8000
-    container_name: frontend
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
-    networks:
-      - bigdata-network
-    restart: unless-stopped
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #     args:
+  #       - NEXT_PUBLIC_API_URL=http://localhost:8000
+  #   container_name: frontend
+  #   depends_on:
+  #     backend:
+  #       condition: service_healthy
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://localhost:8000
+  #     - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+  #   networks:
+  #     - bigdata-network
+  #   restart: unless-stopped
 
   producer-kline:
     <<: *kafka-python-image
@@ -152,15 +150,27 @@ services:
       - KAFKA_TOPIC=crypto_kline_1m
     command: ["python", "binance_producer.py"]
 
-  producer-orderbook-trades:
+  producer-orderbook:
     <<: *kafka-python-image
-    container_name: producer-orderbook-trades
+    container_name: producer-orderbook
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC_ORDERBOOK=crypto_orderbook
+      - KAFKA_TOPIC_TRADES=crypto_trades
     command: ["python", "binance_orderbook_trades_producer.py"]
+  
+  # producer-trades:
+  #   <<: *kafka-python-image
+  #   container_name: producer-trades
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #   environment:
+  #     - KAFKA_BROKER=kafka:9092
+  #   command: ["python", "binance_trades_producer.py"]
 
   consumer-redis:
     <<: *kafka-python-image
@@ -172,10 +182,29 @@ services:
         condition: service_healthy
     environment:
       - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=crypto_kline_1m
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=123456
     command: ["python", "redis_consumer.py"]
+
+  historical-fetcher:
+    <<: *kafka-python-image
+    container_name: historical-fetcher
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/
+      - MONGO_DB=CRYPTO
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=123456
+      - YEARS_BACK=1
+      - RESUME_FROM_EXISTING=true
+    command: ["python", "binance_history_fetcher.py"]
 
 networks:
   bigdata-network:
