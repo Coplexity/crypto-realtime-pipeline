@@ -1,37 +1,34 @@
 version: "3.8"
 
-# Định nghĩa mạng nội bộ để các container gọi được nhau bằng tên
-networks:
-  bigdata-network:
-    driver: bridge
+name: crypto-stack
 
-# Định nghĩa nơi lưu dữ liệu lâu dài (volumes)
-volumes:
-  hdfs_namenode:
-  hdfs_datanode:
-  mongo_data:
-  grafana_data:
+x-kafka-python-image: &kafka-python-image
+  build:
+    context: ./Kafka
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  networks:
+    - bigdata-network
 
 services:
-  # ==============================
-  # 1. Hàng đợi tin nhắn (Kafka)
-  # ==============================
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
+    image: confluentinc/cp-zookeeper:7.4.0
     container_name: zookeeper
-    ports:
-      - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
     networks:
       - bigdata-network
+    restart: unless-stopped
 
   kafka:
-    image: confluentinc/cp-kafka:7.3.0
+    image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_started
     ports:
       - "9092:9092"
       - "29092:29092"
@@ -42,83 +39,148 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server 127.0.0.1:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 8
+      start_period: 45s
     networks:
       - bigdata-network
+    restart: unless-stopped
 
-  # ==============================
-  # 2. Lưu trữ lâu dài (HDFS)
-  # ==============================
-  namenode:
-    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
-    container_name: namenode
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: redis-server --requirepass 123456
     ports:
-      - "9870:9870" # HDFS Web UI
-    environment:
-      - CLUSTER_NAME=bigdata-cluster
-    volumes:
-      - hdfs_namenode:/hadoop/dfs/name
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     networks:
       - bigdata-network
+    restart: unless-stopped
 
-  datanode:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
-    container_name: datanode
-    ports:
-      - "9864:9864"
-    environment:
-      - SERVICE_PRECONDITION=namenode:9870
-    volumes:
-      - hdfs_datanode:/hadoop/dfs/data
-    depends_on:
-      - namenode
-    networks:
-      - bigdata-network
-
-  # ==============================
-  # 3. Trái tim xử lý (Spark)
-  # ==============================
-  spark-master:
-    image: bde2020/spark-master:3.2.1-hadoop3.2
-    container_name: spark-master
-    ports:
-      - "8080:8080" # Spark Master Web UI
-      - "7077:7077" # Spark Submit Port
-    networks:
-      - bigdata-network
-
-  spark-worker:
-    image: bde2020/spark-worker:3.2.1-hadoop3.2
-    container_name: spark-worker
-    environment:
-      - SPARK_MASTER=spark://spark-master:7077
-    ports:
-      - "8081:8081" # Spark Worker Web UI
-    depends_on:
-      - spark-master
-    networks:
-      - bigdata-network
-
-  # ==============================
-  # 4. NoSQL DB & Dashboard
-  # ==============================
   mongodb:
-    image: mongo:latest
+    image: mongo:6
     container_name: mongodb
     ports:
       - "27017:27017"
     volumes:
-      - mongo_data:/data/db
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - bigdata-network
+    restart: unless-stopped
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000" # Grafana Dashboard UI
-    volumes:
-      - grafana_data:/var/lib/grafana
+  backend:
+    build:
+      context: ./backend_fastapi
+      dockerfile: Dockerfile
+    container_name: backend
     depends_on:
-      - mongodb
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB=CRYPTO
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=123456
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - CORS_ORIGINS=["http://localhost:3000"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     networks:
       - bigdata-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+    networks:
+      - bigdata-network
+    restart: unless-stopped
+
+  producer-kline:
+    <<: *kafka-python-image
+    container_name: producer-kline
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=crypto_kline_1m
+    command: ["python", "binance_producer.py"]
+
+  producer-orderbook-trades:
+    <<: *kafka-python-image
+    container_name: producer-orderbook-trades
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKER=kafka:9092
+    command: ["python", "binance_orderbook_trades_producer.py"]
+
+  consumer-redis:
+    <<: *kafka-python-image
+    container_name: consumer-redis
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=123456
+    command: ["python", "redis_consumer.py"]
+
+networks:
+  bigdata-network:
+    name: bigdata
+    driver: bridge
+
+volumes:
+  mongodb_data:
