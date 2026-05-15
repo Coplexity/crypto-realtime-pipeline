@@ -8,6 +8,7 @@ RUN apk add --no-cache gcc g++ musl-dev linux-headers python3-dev && \
         redis==4.6.0 \
         pymongo==3.12.3 \
         python-dotenv==0.21.1 \
-        numpy
+        numpy \
+        prometheus_client
 
 COPY . /opt/spark-jobs/batch/
