@@ -126,12 +126,12 @@ services:
       - spark-warehouse:/opt/spark-warehouse
     environment:
       - INIT_DAEMON_STEP=setup_spark
-    command: /bin/bash /master.sh
+
 
   spark-worker-1:
     build:
       context: ./services/spark-batch
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.worker
     container_name: spark-worker-1
     networks: [crypto-net]
     ports:
@@ -142,12 +142,11 @@ services:
       - SPARK_MASTER=spark://spark-master:7077
       - SPARK_WORKER_MEMORY=2g
       - SPARK_WORKER_CORES=4
-    command: /bin/bash /worker.sh
 
   spark-worker-2:
     build:
       context: ./services/spark-batch
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.worker
     container_name: spark-worker-2
     networks: [crypto-net]
     ports:
@@ -158,7 +157,6 @@ services:
       - SPARK_MASTER=spark://spark-master:7077
       - SPARK_WORKER_MEMORY=2g
       - SPARK_WORKER_CORES=4
-    command: /bin/bash /worker.sh
 
   # ════════════════════════════════
   # 4. DATA INGESTION

@@ -1,0 +1,15 @@
+# Đổi base image sang spark-worker
+FROM bde2020/spark-worker:3.2.1-hadoop3.2
+
+USER root
+
+# Vẫn cài đặt đầy đủ các thư viện y như Master
+RUN apk add --no-cache gcc g++ musl-dev linux-headers python3-dev && \
+    pip3 install --no-cache-dir \
+        redis==4.6.0 \
+        pymongo==3.12.3 \
+        python-dotenv==0.21.1 \
+        numpy \
+        prometheus_client
+
+COPY . /opt/spark-jobs/batch/
