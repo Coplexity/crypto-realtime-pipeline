@@ -4,7 +4,7 @@ import { fetchTopGainers } from "@/lib/api"
 
 interface CoinRanking {
   symbol: string
-  current_price: number
+  price: number
   percent_change: number
   volume_24h?: number
 }
@@ -20,11 +20,13 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<"gainers" | "losers">("gainers")
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [hasData, setHasData] = useState(false)
 
   const load = async () => {
     try {
       const data = await fetchTopGainers("gainers", 100)
       if (data?.rankings) {
+        setHasData(data.rankings.length > 0)
         const sorted = [...data.rankings].sort(
           (a: CoinRanking, b: CoinRanking) => b.percent_change - a.percent_change
         )
@@ -32,7 +34,9 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
         setLosers([...sorted].reverse().filter((r: CoinRanking) => r.percent_change < 0).slice(0, 8))
         setLastUpdate(new Date())
       }
-    } catch { }
+    } catch { 
+      setHasData(false)
+    }
     setLoading(false)
   }
 
@@ -43,7 +47,6 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
   }, [])
 
   const list = tab === "gainers" ? gainers : losers
-  const noData = !loading && list.length === 0
 
   return (
     <div className="card" style={s.box}>
@@ -89,11 +92,17 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
           </div>
         ))}
 
-        {noData && (
+        {!hasData && !loading && (
           <div style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-muted)", fontSize: 11 }}>
             <div style={{ fontSize: 20, marginBottom: 6 }}></div>
             Spark Streaming job chưa chạy<br />
             <span style={{ fontSize: 10 }}>Ranking data sẽ hiện khi job active</span>
+          </div>
+        )}
+
+        {hasData && !loading && list.length === 0 && (
+          <div style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-muted)", fontSize: 11 }}>
+            Chưa có coin nào {tab === "gainers" ? "tăng" : "giảm"} giá
           </div>
         )}
 
@@ -136,7 +145,7 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
               </div>
 
               <span style={{ ...s.priceText, zIndex: 1 }}>
-                ${Number(item.current_price).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${Number(item.price).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
 
               <span style={{ ...s.changeBadge, background: isUp ? "var(--green-dim)" : "var(--red-dim)", color: isUp ? "var(--green-up)" : "var(--red-down)", zIndex: 1 }}>

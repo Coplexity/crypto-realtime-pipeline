@@ -582,6 +582,72 @@ def build_orderbook_query(spark: SparkSession):
     )
 
 
+# ─── Query 4: Top Gainers (Session-based) ─────────────────────────────────────
+def build_top_gainers_query(spark: SparkSession):
+    """
+    Tính toán Top Gainers / Losers tính từ lúc bật luồng (Session).
+    Sử dụng outputMode("complete") để liên tục cập nhật bảng rank.
+    """
+    raw = (
+        spark.readStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", KAFKA_SERVERS)
+        .option("subscribe", TOPIC_TRADES)
+        .option("startingOffsets", "latest")
+        .option("failOnDataLoss", "false")
+        .load()
+    )
+
+    trades = (
+        raw
+        .select(F.from_json(F.col("value").cast("string"), TRADE_SCHEMA).alias("d"))
+        .select("d.*")
+    )
+
+    gainers = (
+        trades
+        .groupBy("symbol")
+        .agg(
+            F.first("price").alias("open"),
+            F.last("price").alias("close"),
+            F.last("trade_time").alias("last_update")
+        )
+        .withColumn("percent_change", ((F.col("close") - F.col("open")) / F.col("open") * 100))
+    )
+
+    def write_ranking(batch_df: DataFrame, batch_id: int):
+        rows = batch_df.collect()
+        if not rows: return
+        
+        rankings = []
+        for r_row in rows:
+            rankings.append({
+                "symbol": r_row["symbol"],
+                "price": float(r_row["close"]),
+                "percent_change": float(r_row["percent_change"]),
+                "timestamp": int(r_row["last_update"])
+            })
+            
+        rankings.sort(key=lambda x: x["percent_change"], reverse=True)
+        
+        try:
+            r = get_redis()
+            r.set("ranking:top_gainers", json.dumps(rankings))
+            r.close()
+            logger.info(f"🏆 Cập nhật Top Gainers ({len(rankings)} coins) vào Redis")
+        except Exception as e:
+            logger.error(f"❌ Lỗi ghi Top Gainers: {e}")
+
+    return (
+        gainers.writeStream
+        .outputMode("complete")
+        .foreachBatch(write_ranking)
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/top_gainers")
+        .trigger(processingTime="5 seconds")
+        .start()
+    )
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
     logger.info("=" * 70)
@@ -606,6 +672,7 @@ def main():
     queries = []
     queries.append(build_kline_query(spark))      # Kline từ Binance (backup)
     queries.append(build_orderbook_query(spark))  # Orderbook snapshots
+    queries.append(build_top_gainers_query(spark)) # Session Top Gainers
 
     logger.info(f"✅ {len(queries)} streaming queries đang chạy")
 

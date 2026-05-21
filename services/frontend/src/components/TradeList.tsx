@@ -37,7 +37,7 @@ export default function TradeList({ trades, connected }: Props) {
     <div className="card" style={s.box}>
       {/* Header */}
       <div className="card-title" style={{ justifyContent: "space-between" }}>
-        <span>⚡ Trades</span>
+        <span>Trades</span>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span className={`live-dot ${connected ? "green" : "red"}`} />
           <span style={{ fontSize: 9, color: connected ? "var(--green-up)" : "var(--red-down)", fontWeight: 400 }}>
