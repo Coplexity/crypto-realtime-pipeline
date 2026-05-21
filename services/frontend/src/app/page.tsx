@@ -1,166 +1,347 @@
 "use client"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import dynamic from "next/dynamic"
-import OrderBook    from "@/components/OrderBook"
-import TradeList    from "@/components/TradeList"
-import MLPredictions from "@/components/MLPredictions"
-import { fetchOHLC, fetchOrderbook, fetchTrades, fetchPredictions, fetchSymbols } from "@/lib/api"
-import { useWebSocket } from "@/hooks/useWebSocket"
+import OrderBook       from "@/components/OrderBook"
+import TradeList       from "@/components/TradeList"
+import MLPredictions   from "@/components/MLPredictions"
+import TickerBar       from "@/components/TickerBar"
+import MarketStats     from "@/components/MarketStats"
+import TopGainers      from "@/components/TopGainers"
+import PipelineStatus  from "@/components/PipelineStatus"
+import { useWebSocket }    from "@/hooks/useWebSocket"
+import { useOrderBookWS }  from "@/hooks/useOrderBookWS"
+import { useTradesWS }     from "@/hooks/useTradesWS"
+import { fetchOHLC, fetchPredictions, fetchSymbols } from "@/lib/api"
 
 const CandleChart = dynamic(() => import("@/components/CandleChart"), { ssr: false })
 
-const INTERVALS = ["1m", "5m", "1h", "4h", "1d"]
+const INTERVALS      = ["1m", "5m", "1h", "4h", "1d"]
 const DEFAULT_SYMBOLS = ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","ADAUSDT","XRPUSDT","DOGEUSDT","AVAXUSDT"]
 
 export default function Dashboard() {
   const [symbols,      setSymbols]      = useState<string[]>(DEFAULT_SYMBOLS)
   const [symbol,       setSymbol]       = useState("BTCUSDT")
-  // Đổi tên từ interval -> timeframe để không bị trùng với hàm setInterval của JS
-  const [timeframe,    setTimeframe]    = useState("5m") 
+  const [timeframe,    setTimeframe]    = useState("5m")
   const [candles,      setCandles]      = useState<any[]>([])
   const [liveCandle,   setLiveCandle]   = useState<any>(null)
-  const [orderbook,    setOrderbook]    = useState<any>(null)
-  const [trades,       setTrades]       = useState<any[]>([])
   const [predictions,  setPredictions]  = useState<any[]>([])
-  const [prices,       setPrices]       = useState<Record<string,number>>({})
+  const [currentPrice, setCurrentPrice] = useState(0)
+  const [prevPrice,    setPrevPrice]    = useState(0)
+  const [backendError, setBackendError] = useState<string | null>(null)
 
-  // WebSocket live candle - sử dụng timeframe mới
-  const { connected } = useWebSocket(symbol, timeframe, useCallback((msg: any) => {
-    if (msg.candle) {
-      setLiveCandle(msg.candle)
-      setPrices(prev => ({ ...prev, [msg.candle.symbol]: msg.candle.close }))
-    }
-  }, []))
+  // ── WebSocket connections ────────────────────────────────────────────────
+  // 1. Kline (candlestick) WS
+  const { connected: wsKlineConnected } = useWebSocket(
+    symbol, timeframe,
+    useCallback((msg: any) => {
+      if (msg.candle) {
+        setLiveCandle(msg.candle)
+        setCurrentPrice(prev => { setPrevPrice(prev || msg.candle.close); return msg.candle.close })
+      }
+    }, [])
+  )
 
-  // Load symbols
+  // 2. OrderBook WS — replaces HTTP polling
+  const { bids, asks, spread, connected: wsObConnected } = useOrderBookWS(symbol)
+
+  // 3. Trades WS — replaces HTTP polling, streams from Kafka
+  const { trades, connected: wsTradesConnected } = useTradesWS(symbol)
+
+  // ── REST: symbols ────────────────────────────────────────────────────────
   useEffect(() => {
-    fetchSymbols().then(d => setSymbols(d?.symbols || DEFAULT_SYMBOLS)).catch(() => {})
+    fetchSymbols()
+      .then(d => setSymbols(d?.symbols || DEFAULT_SYMBOLS))
+      .catch(() => {})
   }, [])
 
-  // Load OHLC - sử dụng timeframe mới
+  // ── REST: OHLC candles ───────────────────────────────────────────────────
   useEffect(() => {
     setCandles([])
+    setBackendError(null)
     fetchOHLC(symbol, timeframe, 200)
-      .then(d => setCandles(d?.candles || []))
-      .catch(() => {})
+      .then(d => {
+        const cs = d?.candles || []
+        setCandles(cs)
+        if (cs.length > 0) {
+          setCurrentPrice(cs.at(-1)?.close || 0)
+          setPrevPrice(cs.at(-2)?.close || 0)
+        }
+      })
+      .catch(err => {
+        setBackendError("Không thể kết nối Backend — kiểm tra docker compose")
+        console.error("OHLC fetch error:", err)
+      })
   }, [symbol, timeframe])
 
-  // Orderbook polling - Bây giờ setInterval sẽ hoạt động đúng
+  // ── REST: ML predictions ─────────────────────────────────────────────────
   useEffect(() => {
-    const load = () => fetchOrderbook(symbol).then(setOrderbook).catch(() => {})
-    load()
-    const id = setInterval(load, 2000)
-    return () => clearInterval(id)
-  }, [symbol])
-
-  // Trades polling
-  useEffect(() => {
-    const load = () => fetchTrades(symbol, 30).then(d => setTrades(d?.trades || [])).catch(() => {})
-    load()
-    const id = setInterval(load, 3000)
-    return () => clearInterval(id)
-  }, [symbol])
-
-  // Predictions polling
-  useEffect(() => {
-    const load = () => fetchPredictions().then(d => setPredictions(d?.predictions || [])).catch(() => {})
+    const load = () =>
+      fetchPredictions().then(d => setPredictions(d?.predictions || [])).catch(() => {})
     load()
     const id = setInterval(load, 30000)
     return () => clearInterval(id)
   }, [])
 
-  const currentPrice = prices[symbol] || candles.at(-1)?.close || 0
-  const prevPrice    = candles.at(-2)?.close || currentPrice
-  const isUp         = currentPrice >= prevPrice
-  const pct          = prevPrice ? ((currentPrice - prevPrice) / prevPrice * 100) : 0
+  const isUp = currentPrice >= prevPrice
+  const pct  = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice * 100) : 0
 
   return (
     <div style={s.root}>
-      {/* Header */}
+
+      {/* ── Error Banner ──────────────────────────────────────────────────── */}
+      {backendError && (
+        <div id="error-banner" style={s.errorBanner}>
+          ⚠️ {backendError}
+          <button onClick={() => setBackendError(null)} style={s.errorClose}>✕</button>
+        </div>
+      )}
+
+      {/* ── Header ───────────────────────────────────────────────────────── */}
       <header style={s.header}>
         <div style={s.brand}>
-          <span style={{ fontSize: 22 }}>⬡</span>
-          <span style={s.brandName}>CryptoAnalytics</span>
-          <span style={s.brandTag}>Lambda Architecture</span>
+          <span style={{ fontSize: 22, lineHeight: 1 }}>⬡</span>
+          <div>
+            <div style={s.brandName}>CryptoAnalytics</div>
+            <div style={s.brandSub}>Lambda Architecture · Kafka · Spark · MongoDB</div>
+          </div>
+          <span style={s.brandBadge}>LIVE</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: connected ? "#22c55e" : "#ef4444", display: "inline-block" }} />
-          <span style={{ color: connected ? "#22c55e" : "#ef4444" }}>{connected ? "Live" : "Connecting..."}</span>
+
+        <div style={s.headerRight}>
+          <div style={s.priceBlock}>
+            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{symbol}</span>
+            <span style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
+              ${currentPrice > 0
+                ? currentPrice.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : "—"}
+            </span>
+            {currentPrice > 0 && (
+              <span style={{
+                fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 4,
+                background: isUp ? "var(--green-dim)" : "var(--red-dim)",
+                color: isUp ? "var(--green-up)" : "var(--red-down)",
+              }}>
+                {isUp ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%
+              </span>
+            )}
+          </div>
+
+          {/* WS health summary */}
+          <div style={s.wsGroup}>
+            {[
+              { label: "K",  ok: wsKlineConnected,  title: "Kline WS"    },
+              { label: "OB", ok: wsObConnected,      title: "OrderBook WS"},
+              { label: "T",  ok: wsTradesConnected,  title: "Trades WS"  },
+            ].map(({ label, ok, title }) => (
+              <span key={label} title={title} style={{ ...s.wsChip, background: ok ? "var(--green-dim)" : "var(--red-dim)", color: ok ? "var(--green-up)" : "var(--red-down)" }}>
+                <span className={`live-dot ${ok ? "green" : "red"}`} style={{ width: 5, height: 5 }} />
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
       </header>
 
-      {/* Symbol ticker bar */}
-      <div style={s.tickerBar}>
-        {symbols.map(sym => {
-          const p = prices[sym]
-          return (
-            <button key={sym} onClick={() => setSymbol(sym)}
-              style={{ ...s.tickerBtn, ...(symbol === sym ? s.tickerActive : {}) }}>
-              <span style={{ fontSize: 11, color: "#94a3b8" }}>{sym.replace("USDT","")}</span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {p ? `$${p.toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2})}` : "—"}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+      {/* ── Ticker Bar ───────────────────────────────────────────────────── */}
+      <TickerBar symbols={symbols} activeSymbol={symbol} onSelect={setSymbol} />
 
-      {/* Main layout */}
+      {/* ── Market Stats ─────────────────────────────────────────────────── */}
+      <MarketStats symbolCount={symbols.length} wsConnected={wsKlineConnected} />
+
+      {/* ── Main 3-column layout ─────────────────────────────────────────── */}
       <div style={s.main}>
-        {/* Left: Chart */}
+
+        {/* Left: Candlestick Chart */}
         <section style={s.chartSection}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9" }}>{symbol}</span>
-              <span style={{ fontSize: 28, fontWeight: 700, color: "#f8fafc" }}>
-                ${currentPrice.toLocaleString("en", { minimumFractionDigits: 2 })}
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 600, padding: "2px 8px", borderRadius: 4,
-                background: isUp ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
-                color: isUp ? "#22c55e" : "#ef4444" }}>
-                {isUp ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%
-              </span>
+          <div style={s.chartHeader}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={s.chartSymbol}>{symbol}</span>
+              <div style={s.ivGroup}>
+                {INTERVALS.map(iv => (
+                  <button
+                    key={iv}
+                    id={`interval-${iv}`}
+                    onClick={() => setTimeframe(iv)}
+                    style={{ ...s.ivBtn, ...(timeframe === iv ? s.ivActive : {}) }}
+                  >
+                    {iv}
+                  </button>
+                ))}
+              </div>
             </div>
-            {/* Interval tabs - Cập nhật dùng timeframe */}
-            <div style={{ display: "flex", gap: 4 }}>
-              {INTERVALS.map(iv => (
-                <button key={iv} onClick={() => setTimeframe(iv)}
-                  style={{ ...s.ivBtn, ...(timeframe === iv ? s.ivActive : {}) }}>
-                  {iv}
-                </button>
-              ))}
-            </div>
+            <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+              {candles.length > 0 ? `${candles.length} candles` : "Loading..."}
+            </span>
           </div>
 
           <CandleChart candles={candles} liveCandle={liveCandle} />
         </section>
 
-        {/* Right: Orderbook + Trades */}
+        {/* Center: Top Gainers / Losers */}
+        <aside style={s.gainersAside}>
+          <TopGainers onSelectSymbol={setSymbol} activeSymbol={symbol} />
+        </aside>
+
+        {/* Right: OrderBook + Trades — now WebSocket powered */}
         <aside style={s.aside}>
-          <OrderBook data={orderbook} />
-          <TradeList trades={trades} />
+          <OrderBook
+            bids={bids}
+            asks={asks}
+            spread={spread}
+            connected={wsObConnected}
+          />
+          <TradeList
+            trades={trades}
+            connected={wsTradesConnected}
+          />
         </aside>
       </div>
 
-      <section style={{ padding: "0 16px 16px" }}>
+      {/* ── ML Predictions ───────────────────────────────────────────────── */}
+      <section style={s.predictionsSection}>
         <MLPredictions predictions={predictions} />
       </section>
+
+      {/* ── Pipeline Status (collapsible) ────────────────────────────────── */}
+      <PipelineStatus
+        wsKlineConnected={wsKlineConnected}
+        wsOrderBookConnected={wsObConnected}
+        wsTradesConnected={wsTradesConnected}
+      />
+
+      {/* ── Footer ───────────────────────────────────────────────────────── */}
+      <footer style={s.footer}>
+        <span>CryptoAnalytics Dashboard · Lambda Architecture</span>
+        <span style={{ color: "var(--text-dim)" }}>
+          Kafka · Spark Streaming · Spark MLlib · MongoDB · Redis · FastAPI · Next.js
+        </span>
+      </footer>
     </div>
   )
 }
 
+/* ─── Styles ──────────────────────────────────────────────────────────────── */
 const s: Record<string, React.CSSProperties> = {
-  root:        { minHeight: "100vh", display: "flex", flexDirection: "column", background: "#080c14", color: "#e2e8f0" },
-  header:      { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: "#0d1117", borderBottom: "1px solid #1e3a5f" },
-  brand:       { display: "flex", alignItems: "center", gap: 10 },
-  brandName:   { fontSize: 18, fontWeight: 700, color: "#93c5fd" },
-  brandTag:    { fontSize: 10, background: "#1e3a5f", color: "#60a5fa", padding: "2px 8px", borderRadius: 4 },
-  tickerBar:   { display: "flex", overflowX: "auto", background: "#080c14", borderBottom: "1px solid #1e3a5f", scrollbarWidth: "none" },
-  tickerBtn:   { display: "flex", flexDirection: "column", alignItems: "flex-start", padding: "8px 16px", border: "none", background: "transparent", cursor: "pointer", borderRight: "1px solid #0f1923", minWidth: 110, gap: 2, color: "#e2e8f0" },
-  tickerActive:{ background: "#0d1520", borderTop: "2px solid #3b82f6" },
-  main:        { display: "grid", gridTemplateColumns: "1fr 300px", flex: 1, gap: 1, background: "#0f1923" },
-  chartSection:{ background: "#0a0f1a", padding: 16, display: "flex", flexDirection: "column", gap: 12 },
-  aside:       { background: "#080c14", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" },
-  ivBtn:       { padding: "5px 12px", border: "1px solid #1e3a5f", background: "transparent", color: "#64748b", cursor: "pointer", borderRadius: 4, fontSize: 12, fontFamily: "inherit" },
-  ivActive:    { background: "#1e3a5f", color: "#60a5fa", borderColor: "#3b82f6" },
+  root: {
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    background: "var(--bg-base)",
+    color: "var(--text-primary)",
+  },
+
+  /* Error banner */
+  errorBanner: {
+    background: "rgba(239,68,68,0.15)",
+    borderBottom: "1px solid var(--red-down)",
+    color: "var(--red-down)",
+    padding: "8px 20px",
+    fontSize: 12,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    fontWeight: 600,
+  },
+  errorClose: {
+    background: "transparent", border: "none", color: "var(--red-down)",
+    cursor: "pointer", fontSize: 14, fontFamily: "inherit",
+  },
+
+  /* Header */
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "11px 20px",
+    background: "var(--bg-primary)",
+    borderBottom: "1px solid var(--border-accent)",
+    gap: 16,
+  },
+  brand:     { display: "flex", alignItems: "center", gap: 12 },
+  brandName: { fontSize: 16, fontWeight: 700, color: "#93c5fd", letterSpacing: "-0.01em" },
+  brandSub:  { fontSize: 9, color: "var(--text-dim)", letterSpacing: "0.04em", marginTop: 1 },
+  brandBadge: {
+    fontSize: 9, fontWeight: 700, letterSpacing: "0.1em",
+    background: "var(--green-dim)", color: "var(--green-up)",
+    padding: "2px 7px", borderRadius: 4, border: "1px solid rgba(34,197,94,0.4)",
+  },
+  headerRight: { display: "flex", alignItems: "center", gap: 16 },
+  priceBlock:  { display: "flex", alignItems: "baseline", gap: 10 },
+  wsGroup:     { display: "flex", gap: 4 },
+  wsChip: {
+    display: "flex", alignItems: "center", gap: 4,
+    padding: "3px 7px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+  },
+
+  /* Main 3-col grid */
+  main: {
+    display: "grid",
+    gridTemplateColumns: "1fr 220px 280px",
+    flex: 1,
+    gap: 1,
+    background: "var(--border-subtle)",
+    minHeight: 0,
+  },
+
+  chartSection: {
+    background: "var(--bg-secondary)",
+    padding: 14,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  chartHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  chartSymbol: { fontSize: 14, fontWeight: 700, color: "var(--text-primary)" },
+  ivGroup:     { display: "flex", gap: 3 },
+  ivBtn: {
+    padding: "4px 10px",
+    border: "1px solid var(--border-accent)",
+    background: "transparent",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+    borderRadius: 4,
+    fontSize: 11,
+    fontFamily: "inherit",
+    transition: "all 0.15s",
+  },
+  ivActive: {
+    background: "var(--accent-blue-dim)",
+    color: "#60a5fa",
+    borderColor: "var(--accent-blue)",
+  },
+
+  gainersAside: {
+    background: "var(--bg-card)",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+  },
+  aside: {
+    background: "var(--bg-primary)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+    overflowY: "auto",
+  },
+
+  predictionsSection: {
+    padding: "8px 14px 10px",
+    background: "var(--bg-base)",
+  },
+
+  footer: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "7px 20px",
+    fontSize: 10,
+    color: "var(--text-muted)",
+    borderTop: "1px solid var(--border-subtle)",
+    background: "var(--bg-primary)",
+    letterSpacing: "0.04em",
+  },
 }

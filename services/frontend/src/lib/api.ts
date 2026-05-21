@@ -35,3 +35,13 @@ export const fetchTopGainers = async (type = "gainers", limit = 10) => {
   const { data } = await api.get("/ranking/top-gainers", { params: { type, limit } })
   return data
 }
+
+export const fetchPredictionHistory = async (symbol: string, limit = 50) => {
+  const { data } = await api.get(`/prediction/${symbol}/history`, { params: { limit } })
+  return data
+}
+
+export const fetchMarketRanking = async (type: "gainers" | "losers" = "gainers", limit = 100) => {
+  const { data } = await api.get("/ranking/top-gainers", { params: { type, limit } })
+  return data
+}
