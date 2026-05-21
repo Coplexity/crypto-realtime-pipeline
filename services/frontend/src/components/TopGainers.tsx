@@ -16,7 +16,7 @@ interface Props {
 
 export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
   const [gainers, setGainers] = useState<CoinRanking[]>([])
-  const [losers,  setLosers]  = useState<CoinRanking[]>([])
+  const [losers, setLosers] = useState<CoinRanking[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<"gainers" | "losers">("gainers")
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
@@ -32,7 +32,7 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
         setLosers([...sorted].reverse().filter((r: CoinRanking) => r.percent_change < 0).slice(0, 8))
         setLastUpdate(new Date())
       }
-    } catch {}
+    } catch { }
     setLoading(false)
   }
 
@@ -55,14 +55,14 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
             onClick={() => setTab("gainers")}
             style={{ ...s.tab, ...(tab === "gainers" ? s.tabActiveGreen : {}) }}
           >
-            🚀 Gainers
+            Gainers
           </button>
           <button
             id="tab-losers"
             onClick={() => setTab("losers")}
             style={{ ...s.tab, ...(tab === "losers" ? s.tabActiveRed : {}) }}
           >
-            📉 Losers
+            Losers
           </button>
         </div>
         {lastUpdate && (
@@ -91,14 +91,14 @@ export default function TopGainers({ onSelectSymbol, activeSymbol }: Props) {
 
         {noData && (
           <div style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-muted)", fontSize: 11 }}>
-            <div style={{ fontSize: 20, marginBottom: 6 }}>⚙️</div>
+            <div style={{ fontSize: 20, marginBottom: 6 }}></div>
             Spark Streaming job chưa chạy<br />
             <span style={{ fontSize: 10 }}>Ranking data sẽ hiện khi job active</span>
           </div>
         )}
 
         {!loading && list.map((item, i) => {
-          const isUp    = item.percent_change >= 0
+          const isUp = item.percent_change >= 0
           const isActive = item.symbol === activeSymbol
           const barWidth = Math.min(Math.abs(item.percent_change) * 8, 100)
 
@@ -204,8 +204,8 @@ const s: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   rowActive: { outline: "1px solid var(--accent-blue)" },
-  rank:      { fontSize: 10, fontWeight: 700, width: 14 },
-  symName:   { fontSize: 12, fontWeight: 600, color: "var(--text-primary)" },
+  rank: { fontSize: 10, fontWeight: 700, width: 14 },
+  symName: { fontSize: 12, fontWeight: 600, color: "var(--text-primary)" },
   priceText: { fontSize: 11, color: "var(--text-secondary)", textAlign: "right" },
   changeBadge: {
     fontSize: 10,

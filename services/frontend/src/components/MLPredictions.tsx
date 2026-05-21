@@ -54,10 +54,10 @@ export default function MLPredictions({ predictions }: Props) {
 
             {/* Data rows */}
             {(predictions || []).map((p, i) => {
-              const isUp       = p.direction === "UP"
+              const isUp = p.direction === "UP"
               const confidence = Number(p.confidence_score || 0)
-              const confPct    = Math.min(confidence * 100, 100)
-              const confColor  = confPct >= 70 ? "var(--green-up)" : confPct >= 45 ? "var(--yellow)" : "var(--red-down)"
+              const confPct = Math.min(confidence * 100, 100)
+              const confColor = confPct >= 70 ? "var(--green-up)" : confPct >= 45 ? "var(--yellow)" : "var(--red-down)"
 
               return (
                 <tr key={i} className="fade-in" style={{ ...s.row, animationDelay: `${i * 40}ms` }}>
@@ -118,7 +118,7 @@ export default function MLPredictions({ predictions }: Props) {
             {!loading && !predictions?.length && (
               <tr>
                 <td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "24px 12px", color: "var(--text-muted)" }}>
-                  <div style={{ fontSize: 20, marginBottom: 8 }}>⚙️</div>
+                  <div style={{ fontSize: 20, marginBottom: 8 }}></div>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>Chưa có dữ liệu dự đoán</div>
                   <div style={{ fontSize: 10 }}>Chạy Spark MLlib batch job để tạo predictions</div>
                 </td>
@@ -132,9 +132,9 @@ export default function MLPredictions({ predictions }: Props) {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  box:   { background: "var(--bg-card)" },
+  box: { background: "var(--bg-card)" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
-  th:    { padding: "8px 12px", textAlign: "left", fontSize: 10, color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" },
-  td:    { padding: "10px 12px", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-subtle)" },
-  row:   { transition: "background 0.15s" },
+  th: { padding: "8px 12px", textAlign: "left", fontSize: 10, color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" },
+  td: { padding: "10px 12px", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-subtle)" },
+  row: { transition: "background 0.15s" },
 }

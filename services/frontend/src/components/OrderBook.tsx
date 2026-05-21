@@ -15,7 +15,7 @@ interface Props {
 
 export default function OrderBook({ bids: rawBids, asks: rawAsk, spread, connected }: Props) {
   const bids = (rawBids || []).slice(0, 15)
-  const asks = (rawAsk  || []).slice(0, 15)
+  const asks = (rawAsk || []).slice(0, 15)
 
   const maxVol = Math.max(
     ...bids.map(b => b.quantity || 0),
@@ -26,8 +26,8 @@ export default function OrderBook({ bids: rawBids, asks: rawAsk, spread, connect
   // Bid/Ask imbalance
   const totalBidQty = bids.reduce((s, b) => s + (b.quantity || 0), 0)
   const totalAskQty = asks.reduce((s, a) => s + (a.quantity || 0), 0)
-  const totalQty    = totalBidQty + totalAskQty
-  const bidPct      = totalQty > 0 ? (totalBidQty / totalQty) * 100 : 50
+  const totalQty = totalBidQty + totalAskQty
+  const bidPct = totalQty > 0 ? (totalBidQty / totalQty) * 100 : 50
 
   const isLoading = bids.length === 0 && asks.length === 0
 
@@ -35,7 +35,7 @@ export default function OrderBook({ bids: rawBids, asks: rawAsk, spread, connect
     <div className="card" style={s.box}>
       {/* Header */}
       <div className="card-title" style={{ justifyContent: "space-between" }}>
-        <span>📖 Order Book</span>
+        <span>Order Book</span>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span className={`live-dot ${connected ? "blue" : "red"}`} />
           <span style={{ fontSize: 9, color: connected ? "var(--accent-blue)" : "var(--red-down)", fontWeight: 400 }}>

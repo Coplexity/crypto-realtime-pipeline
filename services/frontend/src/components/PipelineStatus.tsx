@@ -13,9 +13,9 @@ interface ServiceStatus {
 const LAYER_COLOR: Record<string, string> = {
   ingest: "#f59e0b",
   stream: "#3b82f6",
-  batch:  "#a855f7",
-  serve:  "#22c55e",
-  viz:    "#93c5fd",
+  batch: "#a855f7",
+  serve: "#22c55e",
+  viz: "#93c5fd",
 }
 
 interface Props {
@@ -25,9 +25,9 @@ interface Props {
 }
 
 export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected, wsTradesConnected }: Props) {
-  const [backendOk,    setBackendOk]    = useState<boolean | null>(null)
-  const [dataOk,       setDataOk]       = useState<boolean | null>(null)
-  const [isCollapsed,  setIsCollapsed]  = useState(false)
+  const [backendOk, setBackendOk] = useState<boolean | null>(null)
+  const [dataOk, setDataOk] = useState<boolean | null>(null)
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   useEffect(() => {
     const check = async () => {
@@ -53,7 +53,7 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     // Ingest layer
     {
       name: "binance-ws",
-      icon: "📥",
+      icon: "",
       label: "Binance WS",
       status: dataOk === null ? "checking" : dataOk ? "ok" : "error",
       detail: "Data Ingestion",
@@ -61,7 +61,7 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     },
     {
       name: "kafka",
-      icon: "📨",
+      icon: "",
       label: "Kafka",
       status: allWsOk ? "ok" : dataOk ? "ok" : "checking",
       detail: "Message Queue",
@@ -70,7 +70,7 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     // Speed layer
     {
       name: "spark-streaming",
-      icon: "⚡",
+      icon: "",
       label: "Spark Streaming",
       status: wsKlineConnected ? "ok" : "checking",
       detail: "Speed Layer",
@@ -78,7 +78,7 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     },
     {
       name: "redis",
-      icon: "🗃️",
+      icon: "",
       label: "Redis",
       status: backendOk === null ? "checking" : backendOk ? "ok" : "error",
       detail: "Hot Cache",
@@ -87,7 +87,7 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     // Batch layer
     {
       name: "spark-batch",
-      icon: "🔥",
+      icon: "",
       label: "Spark Batch",
       status: backendOk ? "ok" : "checking",
       detail: "Batch Layer",
@@ -95,7 +95,7 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     },
     {
       name: "mongodb",
-      icon: "🍃",
+      icon: "",
       label: "MongoDB",
       status: backendOk === null ? "checking" : backendOk ? "ok" : "error",
       detail: "Cold Store",
@@ -104,7 +104,7 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     // Serving
     {
       name: "backend",
-      icon: "🔌",
+      icon: "",
       label: "FastAPI",
       status: backendOk === null ? "checking" : backendOk ? "ok" : "error",
       detail: "Serving Layer",
@@ -113,10 +113,10 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
     // Viz
     {
       name: "websockets",
-      icon: "🌐",
+      icon: "",
       label: "WebSockets",
       status: allWsOk ? "ok" : "error",
-      detail: `K:${wsKlineConnected?1:0} OB:${wsOrderBookConnected?1:0} T:${wsTradesConnected?1:0}`,
+      detail: `K:${wsKlineConnected ? 1 : 0} OB:${wsOrderBookConnected ? 1 : 0} T:${wsTradesConnected ? 1 : 0}`,
       layer: "viz",
     },
   ]
@@ -128,7 +128,6 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
       {/* Header — collapsible */}
       <button id="pipeline-toggle" onClick={() => setIsCollapsed(c => !c)} style={s.toggle}>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span>🏗️</span>
           <span style={{ fontWeight: 600, fontSize: 11, color: "var(--text-secondary)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
             Lambda Pipeline Status
           </span>
@@ -152,13 +151,13 @@ export default function PipelineStatus({ wsKlineConnected, wsOrderBookConnected,
                 <div style={{
                   width: 8, height: 8, borderRadius: "50%",
                   background:
-                    svc.status === "ok"       ? "var(--green-up)" :
-                    svc.status === "error"    ? "var(--red-down)" :
-                    "var(--yellow)",
+                    svc.status === "ok" ? "var(--green-up)" :
+                      svc.status === "error" ? "var(--red-down)" :
+                        "var(--yellow)",
                   boxShadow:
-                    svc.status === "ok"    ? "0 0 6px var(--green-up)" :
-                    svc.status === "error" ? "0 0 6px var(--red-down)" :
-                    "none",
+                    svc.status === "ok" ? "0 0 6px var(--green-up)" :
+                      svc.status === "error" ? "0 0 6px var(--red-down)" :
+                        "none",
                   animation: svc.status === "ok" ? "pulse-dot 2s ease infinite" : "none",
                   marginLeft: "auto",
                 }} />

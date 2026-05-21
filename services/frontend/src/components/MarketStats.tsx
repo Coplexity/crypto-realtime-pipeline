@@ -32,12 +32,12 @@ export default function MarketStats({ symbolCount, wsConnected }: Props) {
         const data = await fetchTopGainers("gainers", 1000)
         if (data?.rankings) {
           const gainers = data.rankings.filter((r: any) => r.percent_change > 0).length
-          const losers  = data.rankings.filter((r: any) => r.percent_change < 0).length
-          const total   = data.rankings.length
-          const score   = total > 0 ? Math.round((gainers / total) * 100) : 50
+          const losers = data.rankings.filter((r: any) => r.percent_change < 0).length
+          const total = data.rankings.length
+          const score = total > 0 ? Math.round((gainers / total) * 100) : 50
           setStats({ gainersCount: gainers, losersCount: losers, totalCoins: total, sentimentScore: score })
         }
-      } catch {}
+      } catch { }
       setLoading(false)
     }
     load()
@@ -50,8 +50,8 @@ export default function MarketStats({ symbolCount, wsConnected }: Props) {
     const m = Math.floor((s % 3600) / 60)
     const sec = s % 60
     return h > 0
-      ? `${h}h ${m.toString().padStart(2,"0")}m`
-      : `${m}m ${sec.toString().padStart(2,"0")}s`
+      ? `${h}h ${m.toString().padStart(2, "0")}m`
+      : `${m}m ${sec.toString().padStart(2, "0")}s`
   }
 
   const sentiment = stats?.sentimentScore ?? 50
@@ -61,7 +61,7 @@ export default function MarketStats({ symbolCount, wsConnected }: Props) {
   const cards = [
     {
       id: "stat-sentiment",
-      icon: "🌡️",
+      icon: "",
       label: "Market Sentiment",
       value: loading ? null : sentimentLabel,
       sub: loading ? null : `${stats?.gainersCount ?? 0}↑ ${stats?.losersCount ?? 0}↓`,
@@ -82,7 +82,7 @@ export default function MarketStats({ symbolCount, wsConnected }: Props) {
     },
     {
       id: "stat-symbols",
-      icon: "📡",
+      icon: "",
       label: "Tracked Symbols",
       value: symbolCount.toString(),
       sub: "Binance USDT pairs",
@@ -91,7 +91,7 @@ export default function MarketStats({ symbolCount, wsConnected }: Props) {
     },
     {
       id: "stat-ws",
-      icon: "⚡",
+      icon: "",
       label: "WebSocket",
       value: wsConnected ? "Connected" : "Connecting",
       sub: wsConnected ? "Live data stream" : "Reconnecting...",
@@ -102,7 +102,7 @@ export default function MarketStats({ symbolCount, wsConnected }: Props) {
     },
     {
       id: "stat-uptime",
-      icon: "🕒",
+      icon: "",
       label: "Session Uptime",
       value: formatUptime(uptime),
       sub: "Lambda pipeline active",
@@ -161,8 +161,8 @@ const s: Record<string, React.CSSProperties> = {
     gap: 6,
     marginBottom: 2,
   },
-  icon: { fontSize: 13 },
+
   label: { fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" },
   value: { fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" },
-  sub:   { fontSize: 10, color: "var(--text-muted)" },
+  sub: { fontSize: 10, color: "var(--text-muted)" },
 }
