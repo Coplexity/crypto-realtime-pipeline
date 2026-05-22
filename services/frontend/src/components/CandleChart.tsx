@@ -45,13 +45,15 @@ export default function CandleChart({ candles, liveCandle }: { candles: any[], l
   // Load historical candles
   useEffect(() => {
     if (!candles?.length || !seriesRef.current) return
+    const tzOffset = new Date().getTimezoneOffset() * 60
+
     const data = candles.map((c: any) => ({
-      time: Math.floor((c.openTime || c.time) / 1000),
+      time: Math.floor((c.openTime || c.time) / 1000) - tzOffset,
       open: c.open, high: c.high, low: c.low, close: c.close,
     })).filter((c: any) => c.time > 0)
 
     const vols = candles.map((c: any) => ({
-      time:  Math.floor((c.openTime || c.time) / 1000),
+      time:  Math.floor((c.openTime || c.time) / 1000) - tzOffset,
       value: c.volume,
       color: c.close >= c.open ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)",
     })).filter((v: any) => v.time > 0)
@@ -67,7 +69,8 @@ export default function CandleChart({ candles, liveCandle }: { candles: any[], l
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return
     try {
-      const timeSecs = Math.floor(liveCandle.openTime / 1000)
+      const tzOffset = new Date().getTimezoneOffset() * 60
+      const timeSecs = Math.floor(liveCandle.openTime / 1000) - tzOffset
       
       // 1. Cập nhật nến giá
       seriesRef.current.update({
