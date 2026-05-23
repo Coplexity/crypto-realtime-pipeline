@@ -1,10 +1,8 @@
-# Crypto Analytics System Deployment Guide (Lambda Architecture)
+# Hướng dẫn triển khai hệ thống Crypto Analytics (Lambda Architecture)
 
-## Tổng quan hệ thống
+Tài liệu này hướng dẫn cách triển khai toàn bộ hệ thống phân tích dữ liệu tiền điện tử theo kiến trúc Lambda Architecture trên môi trường Kubernetes sử dụng Minikube.
 
-Tài liệu này mô tả chi tiết cách triển khai hệ thống phân tích dữ liệu tiền điện tử theo kiến trúc Lambda Architecture trên môi trường Kubernetes sử dụng Minikube.
-
-Hệ thống bao gồm các thành phần:
+Hệ thống bao gồm:
 
 - Apache Kafka
 - Apache Spark Streaming
@@ -14,26 +12,28 @@ Hệ thống bao gồm các thành phần:
 - Redis
 - FastAPI
 - Next.js
+- Prometheus + Grafana
 - Kubernetes (Minikube)
 
-Hệ thống hỗ trợ:
+Kiến trúc hệ thống hỗ trợ:
 
-- Streaming dữ liệu crypto realtime
-- Batch processing
-- Machine Learning prediction
+- Streaming dữ liệu realtime từ Binance
+- Realtime analytics
+- Batch Machine Learning pipeline
 - Dashboard realtime
-- WebSocket realtime update
-- Distributed data pipeline
+- WebSocket live updates
+- Monitoring & Observability
+- Distributed microservices deployment
 
 ---
 
 # 1. Chuẩn bị môi trường
 
-## 1.1. Cài đặt các công cụ cần thiết
+## Yêu cầu hệ thống
 
-Cần cài đặt các công cụ sau:
+Cần cài đặt sẵn:
 
-- Docker
+- Docker (Docker Desktop hoặc Docker Engine)
 - kubectl
 - Minikube
 - Git
@@ -46,19 +46,13 @@ kubectl version --client
 minikube version
 ```
 
-Ví dụ output:
-
-```bash
-Docker version 26.x.x
-Client Version: v1.30.x
-minikube version: v1.35.x
-```
-
 ---
 
-## 1.2. Khởi động Minikube
+## Khởi động Minikube
 
-Khởi tạo Kubernetes cluster với đủ tài nguyên cho Spark, Kafka và Airflow.
+Do hệ thống Big Data sử dụng Spark, Kafka và Airflow nên cần cấp tài nguyên đủ lớn cho Kubernetes Cluster.
+
+Khởi động Minikube:
 
 ```bash
 minikube start --cpus=6 --memory=12288
@@ -77,11 +71,173 @@ Kiểm tra cluster:
 kubectl get nodes
 ```
 
+Nếu trạng thái là:
+
+```text
+Ready
+```
+
+nghĩa là cluster đã hoạt động thành công.
+
 ---
 
-# 2. Khởi tạo Infrastructure
+# 2. Build Docker Images cho Microservices
 
-Toàn bộ hệ thống chạy trong namespace:
+Toàn bộ mã nguồn được tách biệt theo mô hình Microservices trong thư mục:
+
+```text
+services/
+```
+
+Do hệ thống chạy trên Minikube local nên cần build image trực tiếp vào Docker daemon của Minikube để Kubernetes có thể pull image nội bộ mà không cần đẩy lên Docker Hub.
+
+---
+
+## 2.1. Trỏ Docker CLI vào Minikube
+
+```bash
+eval $(minikube docker-env)
+```
+
+---
+
+## 2.2. Build Data Ingestion Service
+
+Service này có nhiệm vụ:
+
+- Kết nối Binance API
+- Lấy dữ liệu realtime
+- Publish dữ liệu vào Kafka
+
+Build image:
+
+```bash
+docker build -t crypto-data-ingestion:v1 ./services/data-ingestion
+```
+
+---
+
+## 2.3. Build Spark Streaming Service
+
+Spark Streaming dùng để:
+
+- Consume dữ liệu từ Kafka
+- Xử lý realtime
+- Tính toán analytics
+- Đẩy dữ liệu vào Redis/MongoDB
+
+Build image:
+
+```bash
+docker build -t crypto-spark-streaming:v1 ./services/spark-streaming
+```
+
+---
+
+## 2.4. Build Spark Batch & MLlib
+
+Spark Batch phụ trách:
+
+- Batch Processing
+- Machine Learning
+- Price Prediction
+
+Build image:
+
+```bash
+docker build -t crypto-spark-batch:v1 ./services/spark-batch
+```
+
+> Lưu ý:
+>
+> Tên image PHẢI đúng:
+>
+> ```text
+> crypto-spark-batch:v1
+> ```
+>
+> vì Airflow KubernetesPodOperator sẽ gọi chính image này.
+
+---
+
+## 2.5. Build Airflow Custom Image
+
+Nếu project có custom DAGs/plugins:
+
+```bash
+docker build -t crypto-airflow:v1 ./services/airflow
+```
+
+---
+
+## 2.6. Build FastAPI Backend
+
+Backend phụ trách:
+
+- REST API
+- WebSocket realtime
+- Kết nối MongoDB/Redis
+- Phục vụ dữ liệu cho Frontend
+
+Build image:
+
+```bash
+docker build -t crypto-backend:v1 ./services/backend
+```
+
+---
+
+## 2.7. Build Next.js Frontend
+
+Frontend dashboard realtime:
+
+```bash
+docker build -t crypto-frontend:v1 ./services/frontend
+```
+
+---
+
+# 3. Khởi tạo Infrastructure Kubernetes
+
+Toàn bộ manifest Kubernetes nằm trong thư mục:
+
+```text
+k8s/
+```
+
+Deployment sẽ được thực hiện theo thứ tự:
+
+1. Namespace
+2. Configs & Secrets
+3. Storage
+4. Database
+5. Message Queue
+6. Applications
+7. Orchestration
+
+---
+
+# 3.1. Khởi tạo Namespace & Config
+
+Tạo namespace:
+
+```bash
+kubectl apply -f k8s/namespaces.yaml
+```
+
+Apply ConfigMaps & Secrets:
+
+```bash
+kubectl apply -f k8s/config/
+```
+
+Kiểm tra:
+
+```bash
+kubectl get ns
+```
+
+Namespace mong muốn:
 
 ```text
 crypto-system
@@ -89,42 +245,41 @@ crypto-system
 
 ---
 
-## 2.1. Tạo Namespace
+# 3.2. Triển khai Storage & Database
+
+## Khởi tạo Persistent Volume cho Machine Learning Model
+
+PVC được dùng để lưu:
+
+- model.json
+- checkpoint
+- trained artifacts
+
+Deploy:
 
 ```bash
-kubectl create namespace crypto-system
-```
-
-Kiểm tra:
-
-```bash
-kubectl get namespaces
+kubectl apply -f k8s/orchestration/model-pvc.yaml
 ```
 
 ---
 
-## 2.2. Triển khai Kafka, Redis, MongoDB
-
-Áp dụng toàn bộ manifest infrastructure:
+## Khởi chạy MongoDB, Redis, PostgreSQL
 
 ```bash
-kubectl apply -f k8s/infra/ -n crypto-system
+kubectl apply -f k8s/storage/
 ```
 
-Thư mục `k8s/infra/` thường chứa:
+Các service sẽ bao gồm:
 
-```text
-k8s/infra/
-├── kafka.yaml
-├── zookeeper.yaml
-├── redis.yaml
-├── mongodb.yaml
-└── postgres.yaml
-```
+| Thành phần | Vai trò |
+|---|---|
+| MongoDB | Historical market data |
+| Redis | Speed Layer cache |
+| PostgreSQL | Metadata DB cho Airflow |
 
 ---
 
-## 2.3. Kiểm tra pod
+## Kiểm tra trạng thái
 
 ```bash
 kubectl get pods -n crypto-system
@@ -133,82 +288,27 @@ kubectl get pods -n crypto-system
 Kết quả mong muốn:
 
 ```text
-kafka-0                 Running
-zookeeper-0             Running
-mongodb-0               Running
-redis-xxxxx             Running
-postgres-0              Running
+mongodb-0       Running
+redis-xxxxx     Running
+postgres-0      Running
 ```
 
 ---
 
-# 3. Data Ingestion Pipeline
+# 3.3. Triển khai Kafka & Zookeeper
 
-## 3.1. Data Ingestion Service
+Kafka là trung tâm streaming pipeline.
 
-Service này có nhiệm vụ:
-
-- Gọi Binance API
-- Lấy dữ liệu market realtime
-- Publish vào Kafka Topics
-
-Deploy:
+Triển khai Zookeeper:
 
 ```bash
-kubectl apply -f k8s/apps/data-ingestion.yaml -n crypto-system
+kubectl apply -f k8s/message-queue/zookeeper.yaml
 ```
 
-Kiểm tra pod:
+Triển khai Kafka:
 
 ```bash
-kubectl get pods -n crypto-system
-```
-
-Xem logs:
-
-```bash
-kubectl logs <pod-name> -n crypto-system
-```
-
-Ví dụ:
-
-```bash
-kubectl logs data-ingestion-xxxxx -n crypto-system
-```
-
-Nếu hoạt động đúng sẽ thấy:
-
-```text
-Connected to Binance WebSocket
-Publishing BTCUSDT ticker to Kafka
-```
-
----
-
-# 4. Spark Streaming Realtime Layer
-
-## 4.1. Mục tiêu
-
-Spark Streaming sẽ:
-
-- Consume dữ liệu từ Kafka
-- Xử lý realtime
-- Tính toán:
-  - OHLC
-  - Moving Average
-  - Volume
-  - Top Gainers
-  - Top Losers
-- Ghi kết quả vào:
-  - Redis
-  - MongoDB
-
----
-
-## 4.2. Deploy Spark Streaming
-
-```bash
-kubectl apply -f k8s/apps/crypto-spark-streaming.yaml -n crypto-system
+kubectl apply -f k8s/message-queue/kafka.yaml
 ```
 
 Kiểm tra:
@@ -217,139 +317,140 @@ Kiểm tra:
 kubectl get pods -n crypto-system
 ```
 
-Xem logs Spark:
-
-```bash
-kubectl logs <spark-streaming-pod> -n crypto-system
-```
-
-Nếu thành công sẽ thấy:
+Kết quả:
 
 ```text
-Connected to Kafka
-Processing micro batch
-Writing to Redis
-Writing to MongoDB
+zookeeper-0     Running
+kafka-0         Running
 ```
 
 ---
 
-# 5. Batch Layer & Machine Learning
-
-## 5.1. Build Spark Batch Image
-
-Spark MLlib dùng cho:
-
-- Huấn luyện mô hình
-- Price prediction
-- Trend prediction
-
-Sử dụng Docker environment của Minikube:
-
-```bash
-eval $(minikube docker-env)
-```
-
-Build image:
-
-```bash
-docker build -t crypto-spark-batch:v1 ./services/spark-batch
-```
-
-Lưu ý:
-
-Tên image PHẢI đúng:
-
-```text
-crypto-spark-batch:v1
-```
-
-vì Airflow DAG sử dụng chính tên này.
+# 4. Triển khai Hệ sinh thái Ứng dụng
 
 ---
 
-# 6. Triển khai Airflow
+# 4.1. Khởi chạy Data Ingestion
 
-## 6.1. Deploy Airflow
+Data Ingestion sẽ:
+
+- Kết nối Binance WebSocket
+- Stream dữ liệu realtime
+- Publish vào Kafka Topics
+
+Deploy:
 
 ```bash
-kubectl apply -f k8s/apps/airflow.yaml -n crypto-system
+kubectl apply -f k8s/apps/data-ingestion.yaml
 ```
 
-Airflow gồm:
+Xem logs:
 
-- Scheduler
+```bash
+kubectl logs <pod-name> -n crypto-system
+```
+
+Nếu thành công:
+
+```text
+Connected to Binance WebSocket
+Publishing ticker data to Kafka
+```
+
+---
+
+# 4.2. Khởi chạy Spark Streaming Job
+
+Spark Streaming sẽ:
+
+- Consume Kafka
+- Tính toán realtime indicators
+- Ghi dữ liệu vào MongoDB/Redis
+
+Deploy:
+
+```bash
+kubectl apply -f k8s/compute/spark-jobs/streaming-job.yaml
+```
+
+Kiểm tra logs:
+
+```bash
+kubectl logs <spark-pod> -n crypto-system
+```
+
+---
+
+# 4.3. Deploy Backend & Frontend
+
+## Deploy FastAPI Backend
+
+```bash
+kubectl apply -f k8s/orchestration/backend.yaml
+```
+
+---
+
+## Deploy Next.js Frontend
+
+```bash
+kubectl apply -f k8s/orchestration/frontend.yaml
+```
+
+---
+
+# 4.4. Khởi tạo Airflow
+
+Airflow cần khởi tạo Database trước khi chạy Scheduler/Webserver.
+
+---
+
+## Chạy Airflow Init Job
+
+```bash
+kubectl apply -f k8s/orchestration/airflow-init.yaml
+```
+
+Theo dõi pod:
+
+```bash
+kubectl get pods -n crypto-system -w
+```
+
+Đợi pod:
+
+```text
+airflow-init
+```
+
+chuyển sang trạng thái:
+
+```text
+Completed
+```
+
+---
+
+## Deploy Airflow chính thức
+
+```bash
+kubectl apply -f k8s/orchestration/airflow.yaml
+```
+
+Airflow bao gồm:
+
 - Webserver
+- Scheduler
 
 ---
 
-## 6.2. Khởi tạo Database Airflow
+# 5. Port Forwarding
 
-Nếu Airflow chưa migrate DB:
-
-```bash
-kubectl exec -it deploy/airflow-webserver -n crypto-system -- airflow db migrate
-```
-
-Tạo tài khoản admin:
-
-```bash
-kubectl exec -it deploy/airflow-webserver -n crypto-system -- airflow users create \
--u admin \
--p admin \
--f Admin \
--l User \
--r Admin \
--e admin@example.com
-```
+Mở nhiều tab terminal và chạy các lệnh sau.
 
 ---
 
-# 7. Build Backend & Frontend
-
-## 7.1. Build Backend FastAPI
-
-```bash
-eval $(minikube docker-env)
-
-docker build -t crypto-backend:v1 ./services/backend
-```
-
----
-
-## 7.2. Build Frontend Next.js
-
-```bash
-docker build -t crypto-frontend:v1 ./services/frontend
-```
-
----
-
-# 8. Deploy Backend & Frontend
-
-## 8.1. Deploy Backend
-
-```bash
-kubectl apply -f k8s/apps/fastapi-backend.yaml -n crypto-system
-```
-
----
-
-## 8.2. Deploy Frontend
-
-```bash
-kubectl apply -f k8s/apps/nextjs-frontend.yaml -n crypto-system
-```
-
----
-
-# 9. Port Forwarding
-
-Mở terminal riêng cho từng service.
-
----
-
-## 9.1. Frontend Dashboard
+## Frontend Dashboard
 
 ```bash
 kubectl port-forward svc/nextjs-frontend 3000:3000 -n crypto-system
@@ -363,7 +464,7 @@ http://localhost:3000
 
 ---
 
-## 9.2. Backend API
+## Backend API
 
 ```bash
 kubectl port-forward svc/fastapi-backend 8000:8000 -n crypto-system
@@ -377,7 +478,7 @@ http://localhost:8000
 
 ---
 
-## 9.3. Airflow UI
+## Airflow UI
 
 ```bash
 kubectl port-forward svc/airflow-webserver 8080:8080 -n crypto-system
@@ -389,7 +490,7 @@ Airflow UI:
 http://localhost:8080
 ```
 
-Tài khoản:
+Tài khoản mặc định:
 
 ```text
 admin / admin
@@ -397,23 +498,15 @@ admin / admin
 
 ---
 
-## 9.4. MongoDB
+# 6. Kích hoạt Machine Learning Pipeline
 
-```bash
-kubectl port-forward svc/mongodb 27017:27017 -n crypto-system
-```
+> Đây là bước QUAN TRỌNG nhất của hệ thống.
 
-Dùng MongoDB Compass để kiểm tra dữ liệu.
+Do Kubernetes local có thể mất dữ liệu sau khi restart nên cần retrain model trước khi prediction pipeline hoạt động.
 
 ---
 
-# 10. Kích hoạt ML Pipeline
-
-Do Kubernetes có tính chất stateless nên mỗi lần restart cluster cần chạy lại pipeline ML.
-
----
-
-## 10.1. Mở Airflow Dashboard
+## Bước 1: Mở Airflow Dashboard
 
 ```text
 http://localhost:8080
@@ -421,18 +514,18 @@ http://localhost:8080
 
 ---
 
-## 10.2. Unpause DAGs
+## Bước 2: Unpause DAGs
 
-Bật:
+Bật hai DAG:
 
 - `crypto_ml_training`
 - `crypto_ml_prediction`
 
 ---
 
-## 10.3. Trigger Training DAG
+## Bước 3: Trigger DAG Training
 
-Chạy:
+Chạy DAG:
 
 ```text
 crypto_ml_training
@@ -440,21 +533,33 @@ crypto_ml_training
 
 Mục tiêu:
 
-- Load dữ liệu từ MongoDB
-- Train model bằng Spark MLlib
+- Load dữ liệu historical từ MongoDB
+- Huấn luyện mô hình bằng Spark MLlib
 - Sinh file:
-  
+
 ```text
 model.json
 ```
 
-- Lưu vào PVC
+- Lưu model vào PVC
 
 ---
 
-## 10.4. Prediction DAG
+## Bước 4: Chờ DAG Success
 
-DAG:
+Khi DAG hiển thị:
+
+```text
+Success
+```
+
+nghĩa là model đã được train thành công.
+
+---
+
+## Bước 5: Prediction Pipeline
+
+Sau khi training xong:
 
 ```text
 crypto_ml_prediction
@@ -462,13 +567,46 @@ crypto_ml_prediction
 
 sẽ:
 
-- Chạy mỗi 5 phút
-- Sinh dự đoán giá
-- Ghi kết quả vào MongoDB/Redis
+- Tự động chạy mỗi 5 phút
+- Sinh dữ liệu prediction
+- Ghi prediction vào MongoDB/Redis
+- Hiển thị realtime trên dashboard
 
 ---
 
-# 11. Kiểm tra hệ thống
+# 7. Monitoring & Observability
+
+Hệ thống tích hợp:
+
+- Prometheus
+- Grafana
+
+để theo dõi:
+
+- CPU
+- Memory
+- Kafka throughput
+- Spark jobs
+- Airflow DAGs
+- API latency
+
+---
+
+## Mở Grafana
+
+```bash
+kubectl port-forward svc/grafana 3000:80 -n monitoring
+```
+
+Dashboard monitoring:
+
+```text
+http://localhost:3000
+```
+
+---
+
+# 8. Kiểm tra End-to-End
 
 Truy cập:
 
@@ -476,19 +614,21 @@ Truy cập:
 http://localhost:3000
 ```
 
-Hệ thống hoạt động đúng khi:
+Hệ thống hoạt động thành công khi:
 
-- WebSocket Connected
-- Candlestick realtime
-- Orderbook realtime
-- Gainers/Losers realtime
-- ML Prediction hiển thị dữ liệu
+- WebSocket báo Connected
+- Candlestick realtime cập nhật
+- Order Book realtime hoạt động
+- Gainers/Losers thay đổi liên tục
+- ML Predictions hiển thị dữ liệu
+- Spark Streaming không báo lỗi
+- Airflow DAGs chạy thành công
 
 ---
 
-# 12. Kiến trúc Lambda Architecture
+# 9. Kiến trúc Lambda Architecture
 
-## 12.1. Speed Layer
+## Speed Layer
 
 ```text
 Binance API
@@ -499,14 +639,14 @@ Spark Streaming
     ↓
 Redis + MongoDB
     ↓
-FastAPI
+FastAPI WebSocket
     ↓
 Next.js Dashboard
 ```
 
 ---
 
-## 12.2. Batch Layer
+## Batch Layer
 
 ```text
 MongoDB Historical Data
@@ -517,31 +657,32 @@ Spark MLlib
     ↓
 Model Training
     ↓
-Prediction
+Prediction Pipeline
     ↓
 MongoDB / Redis
 ```
 
 ---
 
-# 13. Thành phần công nghệ
+# 10. Công nghệ sử dụng
 
 | Thành phần | Công nghệ |
 |---|---|
 | Containerization | Docker |
 | Orchestration | Kubernetes |
-| Streaming | Kafka |
+| Message Queue | Kafka |
 | Stream Processing | Spark Streaming |
 | Batch Processing | Spark MLlib |
-| Workflow Scheduler | Airflow |
+| Workflow Orchestration | Airflow |
 | Database | MongoDB |
 | Cache | Redis |
-| Backend | FastAPI |
+| Backend API | FastAPI |
 | Frontend | Next.js |
+| Monitoring | Prometheus + Grafana |
 
 ---
 
-# 14. Debug & Troubleshooting
+# 11. Debug & Troubleshooting
 
 ## Xem pods
 
@@ -573,21 +714,22 @@ kubectl rollout restart deployment airflow-webserver -n crypto-system
 
 ---
 
-# 15. Kết luận
+# 12. Kết luận
 
-Hệ thống Crypto Analytics theo kiến trúc Lambda cho phép:
+Hệ thống Crypto Analytics theo kiến trúc Lambda Architecture cho phép:
 
-- Phân tích dữ liệu realtime
+- Streaming analytics realtime
+- Distributed processing
 - Machine Learning prediction
-- Scalable streaming system
-- Dashboard realtime
-- Distributed data processing
+- Realtime dashboard
+- Microservices deployment
+- Big Data orchestration
 
 Đây là mô hình phù hợp cho:
 
-- Big Data Systems
-- Financial Analytics
-- Realtime Processing
-- Machine Learning Pipelines
-- Distributed Systems
-- Data Engineering
+- Financial Analytics Systems
+- Big Data Platforms
+- Streaming Pipelines
+- Machine Learning Infrastructure
+- Realtime Monitoring Systems
+- Distributed Data Engineering
