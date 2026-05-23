@@ -1,0 +1,8 @@
+# k8s/compute/spark-operator-values.yaml
+sparkJobNamespace: "crypto-system"
+webhook:
+  enable: true
+serviceAccounts:
+  spark:
+    name: spark
+    create: true

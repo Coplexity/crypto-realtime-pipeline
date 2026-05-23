@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: airflow-init
+  namespace: crypto-system
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: airflow-init
+        image: apache/airflow:2.8.0
+        envFrom:
+          - configMapRef:
+              name: airflow-env
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            airflow db migrate
+            airflow users create --role Admin --username admin --password admin123 --email admin@example.com --firstname Admin --lastname User

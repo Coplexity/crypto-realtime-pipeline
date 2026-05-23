@@ -1,0 +1,57 @@
+# ==========================================
+# File: k8s/compute/spark-jobs/ohlc-1h-aggregator.yaml
+# Spark Batch Job: Tổng hợp nến 1 giờ (1h) từ dữ liệu Streaming
+# ==========================================
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: spark-batch-ohlc-1h
+  namespace: crypto-system
+spec:
+  type: Python
+  mode: cluster
+  image: "your-registry/spark-batch:v1"
+  imagePullPolicy: Always
+  
+  # Chỉ định đúng file script cho khung thời gian 1 giờ (1h)
+  mainApplicationFile: "local:///opt/spark-jobs/batch/ohlc_1h_aggregator.py"
+  sparkVersion: "3.4.1"
+  
+  # Chế độ chạy Batch Job: Không tự động restart, nhường quyền điều phối và retry cho Apache Airflow
+  restartPolicy:
+    type: Never
+
+  deps:
+    packages:
+      - "org.mongodb.spark:mongo-spark-connector_2.12:10.1.1"
+
+  # Cấu hình tài nguyên cho Pod Driver (Điều phối phân vùng dữ liệu 1h)
+  driver:
+    cores: 1
+    coreLimit: "1200m"
+    memory: "1024m" # Nâng lên 1GB RAM để xử lý mượt mà lượng metadata lớn hơn khung 5m
+    labels:
+      version: 3.4.1
+      job-type: batch-etl
+      interval: 1h
+    serviceAccount: spark-crypto-sa
+    envFrom:
+      - configMapRef:
+          name: crypto-app-config
+    env:
+      - name: MONGO_URI
+        valueFrom:
+          secretKeyRef:
+            name: crypto-secrets
+            key: MONGO_USER
+
+  # Cấu hình tài nguyên cho Pod Executors (Thực thi tính toán gom nhóm)
+  # Với khung 1h, lượng dữ liệu giao dịch cần quét lớn gấp 12 lần khung 5m, 
+  # vì vậy cần tăng cường khả năng xử lý song song.
+  executor:
+    cores: 1
+    instances: 2 # Chạy song song 2 executors để phân chia partition dữ liệu hiệu quả
+    memory: "1536m" # Cấp phát 1.5GB RAM cho mỗi Executor để tránh nghẽn bộ nhớ đệm (Shuffle Memory)
+    labels:
+      version: 3.4.1
+      interval: 1h

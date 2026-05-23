@@ -1,0 +1,49 @@
+# ==========================================
+# File: k8s/compute/spark-jobs/ohlc-1d-aggregator.yaml
+# Spark Batch Job: Tổng hợp nến ngày (1D) từ dữ liệu Streaming
+# ==========================================
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: spark-batch-ohlc-1d
+  namespace: crypto-system
+spec:
+  type: Python
+  mode: cluster
+  image: "your-registry/spark-batch:v1"
+  imagePullPolicy: Always
+  
+  # Đường dẫn tới script python bên trong container
+  # Đối với 5m, 1h, 4h, bạn chỉ cần tạo file YAML tương tự và đổi tên file ở dòng này
+  mainApplicationFile: "local:///opt/spark-jobs/batch/ohlc_1d_aggregator.py"
+  sparkVersion: "3.4.1"
+  
+  # Không tự động restart, nhường quyền kiểm soát workflow cho Airflow
+  restartPolicy:
+    type: Never
+
+  deps:
+    packages:
+      - "org.mongodb.spark:mongo-spark-connector_2.12:10.1.1"
+
+  driver:
+    cores: 1
+    coreLimit: "1200m"
+    memory: "1024m"
+    labels:
+      version: 3.4.1
+      job-type: batch-etl
+    serviceAccount: spark-crypto-sa
+    env:
+      - name: MONGO_URI
+        valueFrom:
+          secretKeyRef:
+            name: crypto-secrets
+            key: MONGO_USER # Lưu ý: Map đúng cấu trúc URI trong code Python của bạn
+
+  executor:
+    cores: 1
+    instances: 2 # Scale out số lượng Executor dựa trên lượng dữ liệu nến cần tổng hợp
+    memory: "2048m"
+    labels:
+      version: 3.4.1

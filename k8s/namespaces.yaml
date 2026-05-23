@@ -1,0 +1,61 @@
+# ==========================================
+# 1. Khởi tạo Namespace
+# ==========================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crypto-system
+  labels:
+    environment: production
+    project: big-data-crypto
+
+---
+# ==========================================
+# 2. ResourceQuota: Giới hạn tổng tài nguyên
+# ==========================================
+# Tránh trường hợp Spark streaming hoặc Kafka rò rỉ bộ nhớ (memory leak) 
+# làm treo toàn bộ worker node của Kubernetes.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: crypto-system-quota
+  namespace: crypto-system
+spec:
+  hard:
+    # Tổng số Pod tối đa được tạo trong namespace này
+    pods: "50"
+    
+    # Tổng lượng tài nguyên yêu cầu (để K8s xếp lịch)
+    requests.cpu: "8"
+    requests.memory: "16Gi"
+    
+    # Tổng giới hạn tài nguyên tối đa (chạm mức này sẽ bị OOMKilled)
+    limits.cpu: "16"
+    limits.memory: "32Gi"
+
+---
+# ==========================================
+# 3. LimitRange: Cấu hình mặc định cho từng Pod
+# ==========================================
+# Nếu một file YAML (ví dụ apps.yaml) không khai báo resources, 
+# K8s sẽ tự động gán các thông số này để giữ an toàn cho cluster.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: crypto-system-limit-range
+  namespace: crypto-system
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: "250m"       # 1/4 CPU core
+        memory: "512Mi"
+      default:
+        cpu: "500m"       # 1/2 CPU core
+        memory: "1Gi"
+      max:
+        cpu: "4"          # Một container không được phép vượt quá 4 cores
+        memory: "8Gi"
+      min:
+        cpu: "100m"
+        memory: "128Mi"

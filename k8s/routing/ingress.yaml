@@ -1,0 +1,83 @@
+# ==========================================
+# File: k8s/routing/ingress.yaml
+# Cấu hình Ingress Controller (Mạch điều hướng Traffic từ Internet/Mạng ngoài vào Cluster)
+# ==========================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crypto-system-ingress
+  namespace: crypto-system
+  annotations:
+    # Chỉ định sử dụng NGINX Ingress Controller (Chuẩn industry-standard)
+    kubernetes.io/ingress.class: "nginx"
+    
+    # CẤU HÌNH SỐNG CÒN CHO WEBSOCKET (Real-time Orderbook & Trade Charts)
+    # Tăng thời gian timeout lên 1 tiếng (3600 giây). Nếu để mặc định (60s), 
+    # các kết nối WebSocket từ Trình duyệt lên Backend API sẽ liên tục bị ngắt và reconnect.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    
+    # Cấu hình HTTP sang HTTPS redirect (Bật lên khi có SSL Certificate)
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    
+    # Giới hạn kích thước tối đa của file tải lên (đề phòng nếu có tính năng upload log/avatar)
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    
+    # Kích hoạt tính năng CORS nâng cao nếu cần gọi chéo giữa các subdomains
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "PUT, GET, POST, OPTIONS, DELETE"
+
+spec:
+  # Cấu hình TLS/SSL (HTTPS) - Mở ra khi bạn cấu hình Cert-Manager với Let's Encrypt
+  # tls:
+  #   - hosts:
+  #       - crypto.local
+  #       - api.crypto.local
+  #       - airflow.crypto.local
+  #     secretName: crypto-system-tls-secret
+
+  rules:
+    # ------------------------------------------
+    # 1. Định tuyến cho Giao diện Người dùng (Frontend UI Next.js)
+    # ------------------------------------------
+    - host: crypto.local
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 3000
+
+    # ------------------------------------------
+    # 2. Định tuyến cho Cổng API & Luồng WebSockets (FastAPI Backend)
+    # ------------------------------------------
+    - host: api.crypto.local
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8000
+
+    # ------------------------------------------
+    # 3. Định tuyến cho Giao diện Quản lý Lịch trình (Apache Airflow Webserver)
+    # ------------------------------------------
+    - host: airflow.crypto.local
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                # Tên service mặc định được sinh ra bởi Helm Chart khi đặt tên release là "crypto-airflow"
+                name: crypto-airflow-webserver 
+                port:
+                  number: 8080

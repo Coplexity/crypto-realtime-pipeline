@@ -1,0 +1,55 @@
+# k8s/compute/spark-jobs/streaming-job.yaml
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: crypto-realtime-streaming
+  namespace: crypto-system
+spec:
+  type: Python
+  pythonVersion: "3"
+  mode: cluster
+  image: "crypto-spark-streaming:v2"
+  imagePullPolicy: Never
+  mainApplicationFile: "local:///opt/spark-jobs/streaming/streaming_job.py"
+  sparkVersion: "3.4.1"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 3
+    onFailureRetryInterval: 10
+    onSubmissionFailureRetries: 5
+    onSubmissionFailureRetryInterval: 20
+  driver:
+    cores: 1
+    coreLimit: "1200m"
+    memory: "1024m"
+    serviceAccount: spark
+    env:
+      - name: KAFKA_BOOTSTRAP_SERVERS
+        value: "kafka:9092"
+      - name: MONGO_URI
+        value: "mongodb://admin:admin123@mongodb:27017"
+      - name: MONGO_DB
+        value: "crypto_db"
+      - name: REDIS_HOST
+        value: "redis"
+      - name: REDIS_PASSWORD
+        value: "redis123"
+      - name: CHECKPOINT_DIR
+        value: "/tmp/spark-checkpoints"
+  executor:
+    cores: 1
+    instances: 2  # Chạy 2 luồng xử lý song song
+    memory: "1024m"
+    env:
+      - name: KAFKA_BOOTSTRAP_SERVERS
+        value: "kafka:9092"
+      - name: MONGO_URI
+        value: "mongodb://admin:admin123@mongodb:27017"
+      - name: MONGO_DB
+        value: "crypto_db"
+      - name: REDIS_HOST
+        value: "redis"
+      - name: REDIS_PASSWORD
+        value: "redis123"
+      - name: CHECKPOINT_DIR
+        value: "/tmp/spark-checkpoints"

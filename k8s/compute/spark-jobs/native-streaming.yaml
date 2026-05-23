@@ -1,0 +1,39 @@
+# k8s/compute/spark-jobs/native-streaming.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-spark-streaming
+  namespace: crypto-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crypto-spark-streaming
+  template:
+    metadata:
+      labels:
+        app: crypto-spark-streaming
+    spec:
+      containers:
+      - name: spark-streaming
+        image: crypto-spark-streaming:v2
+        imagePullPolicy: Never
+        # Gọi thẳng lệnh spark-submit chạy mode local với 2 cores
+        command: ["/bin/bash", "-c"]
+        args: 
+          - "/spark/bin/spark-submit --master local[2] /opt/spark-jobs/streaming/streaming_job.py"
+        env:
+          - name: KAFKA_BOOTSTRAP_SERVERS
+            value: "kafka:9092"
+          - name: MONGO_URI
+            value: "mongodb://admin:admin123@mongodb:27017"
+          - name: MONGO_DB
+            value: "crypto_db"
+          - name: REDIS_HOST
+            value: "redis"
+          - name: REDIS_PASSWORD
+            value: "redis123"
+          - name: REDIS_PORT
+            value: "6379"
+          - name: CHECKPOINT_DIR
+            value: "/tmp/spark-checkpoints"

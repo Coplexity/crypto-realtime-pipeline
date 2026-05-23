@@ -1,0 +1,51 @@
+# ==========================================
+# File: k8s/compute/spark-jobs/train-price-prediction.yaml
+# Spark ML Job: Huấn luyện mô hình Linear Regression
+# ==========================================
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: spark-ml-train-model
+  namespace: crypto-system
+spec:
+  type: Python
+  mode: cluster
+  image: "your-registry/spark-batch:v1"
+  imagePullPolicy: Always
+  mainApplicationFile: "local:///opt/spark-jobs/batch/train_price_prediction.py"
+  sparkVersion: "3.4.1"
+  restartPolicy:
+    type: Never
+
+  deps:
+    packages:
+      - "org.mongodb.spark:mongo-spark-connector_2.12:10.1.1"
+
+  driver:
+    cores: 1
+    coreLimit: "1500m"
+    memory: "2048m" # Nâng RAM cho Driver vì nó cần gom kết quả model metadata
+    labels:
+      job-type: ml-training
+    serviceAccount: spark-crypto-sa
+    envFrom:
+      - configMapRef:
+          name: crypto-app-config
+    
+    # Mount ổ đĩa dùng chung để lưu file model (.parquet) sau khi train xong
+    volumeMounts:
+      - name: ml-models-vol
+        mountPath: /opt/spark-data/models
+
+  executor:
+    cores: 2 # Tăng số core để tăng tốc độ xử lý tính toán gradient
+    instances: 3
+    memory: "4096m" # Cần nhiều RAM để tránh lỗi GC Overhead khi chạy mô hình phân tán
+    volumeMounts:
+      - name: ml-models-vol
+        mountPath: /opt/spark-data/models
+
+  volumes:
+    - name: ml-models-vol
+      persistentVolumeClaim:
+        claimName: spark-ml-models-pvc # Yêu cầu có 1 PVC riêng để chứa Models

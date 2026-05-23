@@ -1,0 +1,29 @@
+# k8s/apps/data-ingestion.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-ingestion
+  namespace: crypto-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-ingestion
+  template:
+    metadata:
+      labels:
+        app: data-ingestion
+    spec:
+      containers:
+      - name: data-ingestion
+        image: crypto-data-ingestion:latest
+        imagePullPolicy: Never  # Yêu cầu K8s dùng image vừa build trong Minikube thay vì tải trên mạng
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: CRYPTO_SYMBOLS
+          value: "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,ADAUSDT,XRPUSDT,DOGEUSDT,AVAXUSDT"
+        - name: BINANCE_API_KEY
+          value: ""  # Nếu có API Key thì bạn điền vào đây, không thì để trống
+        ports:
+        - containerPort: 8001

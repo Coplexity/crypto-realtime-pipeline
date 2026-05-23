@@ -1,0 +1,344 @@
+version: "3.8"
+
+# ─── Mạng nội bộ để các container gọi nhau bằng tên ───────────────────────
+networks:
+  crypto-net:
+    driver: bridge
+
+# ─── Volumes: lưu data lâu dài khi restart ────────────────────────────────
+volumes:
+  mongo-data:
+  redis-data:
+  grafana-data:
+  airflow-logs:
+  postgres-data:
+  prometheus-data:
+  spark-warehouse:
+
+services:
+
+  # ════════════════════════════════
+  # 1. MESSAGE QUEUE: Kafka + Zookeeper
+  # ════════════════════════════════
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    networks: [crypto-net]
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka
+    networks: [crypto-net]
+    ports:
+      - "9092:9092"
+      - "29092:29092" # FIX: Mở port để các script bên ngoài (host) có thể kết nối
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks: [crypto-net]
+    ports:
+      - "8090:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: crypto-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  # ════════════════════════════════
+  # 2. STORAGE: MongoDB + Redis
+  # ════════════════════════════════
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    networks: [crypto-net]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin123}
+      MONGO_INITDB_DATABASE: crypto_db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    networks: [crypto-net]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-redis123}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    environment:
+      - REDISCLI_AUTH=${REDIS_PASSWORD:-redis123} # FIX: Để healthcheck không lộ pass trong log
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ════════════════════════════════
+  # 3. SPARK: Master + 2 Workers
+  # ════════════════════════════════
+  spark-master:
+    build:
+      context: ./services/spark-batch
+      dockerfile: Dockerfile
+    container_name: spark-master
+    networks: [crypto-net]
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./services/spark-streaming:/opt/spark-jobs/streaming
+      - ./services/spark-batch:/opt/spark-jobs/batch
+      - spark-warehouse:/opt/spark-warehouse
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+
+
+  spark-worker-1:
+    build:
+      context: ./services/spark-batch
+      dockerfile: Dockerfile.worker
+    container_name: spark-worker-1
+    networks: [crypto-net]
+    ports:
+      - "8081:8081"
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_CORES=4
+
+  spark-worker-2:
+    build:
+      context: ./services/spark-batch
+      dockerfile: Dockerfile.worker
+    container_name: spark-worker-2
+    networks: [crypto-net]
+    ports:
+      - "8082:8081"
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_CORES=4
+
+  # ════════════════════════════════
+  # 4. DATA INGESTION
+  # ════════════════════════════════
+  data-ingestion:
+    build:
+      context: ./services/data-ingestion
+      dockerfile: Dockerfile
+    container_name: data-ingestion
+    networks: [crypto-net]
+    ports:
+      - "8001:8001"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CRYPTO_SYMBOLS: ${CRYPTO_SYMBOLS:-BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,ADAUSDT,XRPUSDT,DOGEUSDT,AVAXUSDT}
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+    restart: unless-stopped
+
+  # ════════════════════════════════
+  # 5. BACKEND: FastAPI
+  # ════════════════════════════════
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: backend
+    networks: [crypto-net]
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MONGO_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-admin123}@mongodb:27017
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    restart: unless-stopped
+
+  ticker-updater:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: ticker-updater
+    networks: [crypto-net]
+    command: ["python", "ticker_updater.py"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
+      MONGO_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-admin123}@mongodb:27017
+    restart: unless-stopped
+
+  # ════════════════════════════════
+  # 6. FRONTEND: Next.js
+  # ════════════════════════════════
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    networks: [crypto-net]
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000 
+      # FIX: Thêm URL nội bộ cho Server-Side Rendering gọi API nhanh và chính xác hơn
+      INTERNAL_API_URL: http://backend:8000 
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000
+    restart: unless-stopped
+
+  # ════════════════════════════════
+  # 7. AIRFLOW: Orchestration
+  # ════════════════════════════════
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    networks: [crypto-net]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+
+  airflow-init:
+    image: apache/airflow:2.8.0
+    container_name: airflow-init
+    networks: [crypto-net]
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nFe0I=}
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin123
+    command: version
+    restart: "no"
+
+  airflow-webserver:
+    image: apache/airflow:2.8.0
+    container_name: airflow-webserver
+    networks: [crypto-net]
+    ports:
+      - "8088:8080"
+    depends_on:
+      - airflow-init
+    volumes:
+      - airflow-logs:/opt/airflow/logs
+      - ./services/airflow/dags:/opt/airflow/dags
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nFe0I=}
+      AIRFLOW__WEBSERVER__SECRET_KEY: mysecretkey
+    command: webserver
+    restart: unless-stopped
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: ./services/airflow/Dockerfile       
+    user: root
+    container_name: airflow-scheduler
+    networks: [crypto-net]
+    depends_on:
+      - airflow-webserver
+    volumes:
+      - airflow-logs:/opt/airflow/logs
+      - ./services/airflow/dags:/opt/airflow/dags
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nFe0I=}
+    command: scheduler
+    restart: unless-stopped
+
+  # ════════════════════════════════
+  # 8. MONITORING
+  # ════════════════════════════════
+  prometheus:
+    image: prom/prometheus:v2.49.0
+    container_name: prometheus
+    networks: [crypto-net]
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    networks: [crypto-net]
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+    depends_on:
+      - prometheus

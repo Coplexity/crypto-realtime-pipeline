@@ -1,0 +1,55 @@
+# ==========================================
+# File: k8s/compute/spark-jobs/ohlc-5m-aggregator.yaml
+# Spark Batch Job: Tổng hợp nến 5 phút (5m) từ dữ liệu Streaming
+# ==========================================
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: spark-batch-ohlc-5m
+  namespace: crypto-system
+spec:
+  type: Python
+  mode: cluster
+  image: "your-registry/spark-batch:v1"
+  imagePullPolicy: Always
+  
+  # Chỉ định đúng file script cho khung 5 phút
+  mainApplicationFile: "local:///opt/spark-jobs/batch/ohlc_5m_aggregator.py"
+  sparkVersion: "3.4.1"
+  
+  # Không tự động restart, để Airflow xử lý retry nếu lỗi mạng tạm thời
+  restartPolicy:
+    type: Never
+
+  deps:
+    packages:
+      - "org.mongodb.spark:mongo-spark-connector_2.12:10.1.1"
+
+  # Driver không cần nhiều RAM vì lượng metadata trả về từ 5 phút data là rất ít
+  driver:
+    cores: 1
+    coreLimit: "1000m"
+    memory: "512m" 
+    labels:
+      version: 3.4.1
+      job-type: batch-etl
+      interval: 5m
+    serviceAccount: spark-crypto-sa
+    envFrom:
+      - configMapRef:
+          name: crypto-app-config
+    env:
+      - name: MONGO_URI
+        valueFrom:
+          secretKeyRef:
+            name: crypto-secrets
+            key: MONGO_USER
+
+  # Rút gọn số lượng Executor xuống 1 instance để tối ưu chi phí khởi tạo (Cold Start)
+  executor:
+    cores: 1
+    instances: 1 
+    memory: "1024m" # 1GB RAM là quá đủ cho tác vụ gom nhóm 5 phút
+    labels:
+      version: 3.4.1
+      interval: 5m

@@ -1,0 +1,58 @@
+# ==========================================
+# File: k8s/compute/spark-jobs/ohlc-4h-aggregator.yaml
+# Spark Batch Job: Tổng hợp nến 4 giờ (4h) từ dữ liệu Streaming
+# ==========================================
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: spark-batch-ohlc-4h
+  namespace: crypto-system
+spec:
+  type: Python
+  mode: cluster
+  image: "your-registry/spark-batch:v1"
+  imagePullPolicy: Always
+  
+  # Chỉ định đúng file script cho khung thời gian 4 giờ (4h)
+  mainApplicationFile: "local:///opt/spark-jobs/batch/ohlc_4h_aggregator.py"
+  sparkVersion: "3.4.1"
+  
+  # Chế độ chạy Batch Job: Không tự động restart, nhường quyền điều phối và retry cho Apache Airflow
+  restartPolicy:
+    type: Never
+
+  deps:
+    packages:
+      - "org.mongodb.spark:mongo-spark-connector_2.12:10.1.1"
+
+  # Cấu hình tài nguyên cho Pod Driver (Điều phối phân vùng dữ liệu 4h)
+  # Khung 4h yêu cầu Driver quản lý lượng lớn partition metadata hơn trước khi bắt đầu tính toán định kỳ
+  driver:
+    cores: 1
+    coreLimit: "1500m"
+    memory: "1536m" # Tăng lên 1.5GB RAM để Driver duy trì kế hoạch thực thi (Execution Plan) ổn định
+    labels:
+      version: 3.4.1
+      job-type: batch-etl
+      interval: 4h
+    serviceAccount: spark-crypto-sa
+    envFrom:
+      - configMapRef:
+          name: crypto-app-config
+    env:
+      - name: MONGO_URI
+        valueFrom:
+          secretKeyRef:
+            name: crypto-secrets
+            key: MONGO_USER
+
+  # Cấu hình tài nguyên cho Pod Executors (Thực thi tính toán gom nhóm)
+  # Khung 4h chứa khối lượng dữ liệu giao dịch crypto real-time rất lớn, dễ xảy ra thắt nút cổ chai
+  # trong quá trình xáo trộn dữ liệu (Shuffle Stage).
+  executor:
+    cores: 2 # Tăng lên 2 cores để tối ưu xử lý đa luồng (Multi-threading) khi tính toán các hàm toán học
+    instances: 2 # Duy trì 2 instances chạy song song để tối ưu hóa hạ tầng phân tán
+    memory: "3072m" # Cấp phát 3GB RAM cho mỗi Executor để tạo không gian an toàn cho bộ nhớ đệm (Execution + Storage Memory)
+    labels:
+      version: 3.4.1
+      interval: 4h

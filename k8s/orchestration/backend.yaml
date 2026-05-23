@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-backend
+  namespace: crypto-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fastapi-backend
+  template:
+    metadata:
+      labels:
+        app: fastapi-backend
+    spec:
+      containers:
+      - name: backend
+        image: crypto-backend:v1
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        env:
+        # Truyền thông tin kết nối DB nội bộ K8s cho FastAPI
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT      
+          value: "6379"
+        - name: REDIS_PASSWORD
+          value: "redis123"
+        - name: MONGO_URI
+          value: "mongodb://admin:admin123@mongodb:27017"
+        - name: MONGO_DB
+          value: "crypto_db"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-backend
+  namespace: crypto-system
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app: fastapi-backend

@@ -1,0 +1,35 @@
+# k8s/storage/redis.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: crypto-system
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: crypto-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        command: ["redis-server"]
+        args: ["--requirepass", "redis123", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+        ports:
+        - containerPort: 6379

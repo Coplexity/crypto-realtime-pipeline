@@ -1,0 +1,93 @@
+# ==========================================
+# File: k8s/config/configmaps.yaml
+# ==========================================
+
+# ------------------------------------------
+# 1. Cấu hình biến môi trường chung cho các Services
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crypto-app-config
+  namespace: crypto-system
+  labels:
+    app: crypto-system
+    component: config
+data:
+  # Cấu hình cho Data Ingestion
+  CRYPTO_SYMBOLS: "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,ADAUSDT,XRPUSDT,DOGEUSDT,AVAXUSDT"
+  
+  # Cấu hình cho Frontend
+  # Trong K8s, NEXT_PUBLIC_API_URL thường trỏ ra ngoài qua Ingress (ví dụ: api.yourdomain.com)
+  NEXT_PUBLIC_API_URL: "http://api.crypto.local" 
+  NEXT_PUBLIC_WS_URL: "ws://api.crypto.local"
+  
+  # Gọi API nội bộ K8s (Server-Side Rendering) thông qua ClusterIP Service name
+  INTERNAL_API_URL: "http://backend-service:8000"
+
+---
+# ------------------------------------------
+# 2. Script khởi tạo MongoDB (thay thế cho ./scripts/mongo-init.js)
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-init-script
+  namespace: crypto-system
+data:
+  mongo-init.js: |
+    // Tự động tạo database và các collections/indexes cần thiết cho Big Data
+    print("Bắt đầu khởi tạo database crypto_db...");
+    
+    db = db.getSiblingDB('crypto_db');
+    
+    // Tạo collections
+    db.createCollection('trades');
+    db.createCollection('ohlc');
+    db.createCollection('predictions');
+    
+    // Đánh index để truy vấn nhanh (Đặc biệt quan trọng khi data phình to)
+    db.trades.createIndex({ "symbol": 1, "timestamp": -1 });
+    db.ohlc.createIndex({ "symbol": 1, "interval": 1, "timestamp": -1 });
+    db.predictions.createIndex({ "symbol": 1, "timestamp": -1 });
+    
+    print("Khởi tạo database crypto_db thành công.");
+
+---
+# ------------------------------------------
+# 3. Cấu hình Prometheus (thay thế cho ./monitoring/prometheus.yml)
+# ------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: crypto-system
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      # Tự động tìm và thu thập metrics từ các Pods trong K8s có annotation "prometheus.io/scrape: 'true'"
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+            
+      # Backend FastAPI Metrics
+      - job_name: 'fastapi-backend'
+        static_configs:
+          - targets: ['backend-service:8000']
